@@ -1,7 +1,7 @@
 ---
 name: "[FEAT]"
 about: Suggest an idea for this project
-title: ''
+title: "[FEAT]"
 labels: ''
 assignees: ''
 
