@@ -10,6 +10,8 @@ x-common-env-vars: &common-env-vars
   AIRFLOW__WEBSERVER__RBAC: "True"
   AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
   ASTRONOMER_ENVIRONMENT: local
+  UPBIT_ACCESS_KEY: None
+  UPBIT_SECRET_KEY: None
 
 networks:
   airflow:
