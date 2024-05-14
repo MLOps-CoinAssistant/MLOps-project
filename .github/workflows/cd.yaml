@@ -1,0 +1,19 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  SSH:
+    - uses: actions/checkout@v2
+    - name: Run scripts in server
+      uses: appleboy/ssh-action@master
+      with:
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        script: |
+          cd ${{ vars.project_path }}/${{ github.event.repository.name }}
+          git pull origin develop
