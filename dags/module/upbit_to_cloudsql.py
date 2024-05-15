@@ -39,7 +39,7 @@ def get_hourly_data(start_date, end_date):
         "KRW-BTC",
         interval="minute60",
         to=end_date.strftime("%Y-%m-%d %H:%M:%S"),
-        count=24,
+        count=168,
     )
     return df
 

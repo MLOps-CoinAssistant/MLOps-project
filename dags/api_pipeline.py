@@ -1,7 +1,6 @@
 from airflow.decorators import dag, task
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from pendulum import datetime
 from module import upbit_to_cloudsql
 
 
