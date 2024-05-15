@@ -86,7 +86,7 @@ from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
 #     )
 
 
-def train_fn_iris(hook=PostgresHook(postgres_conn_id="postgres_test"), **context):
+def train_fn_iris(hook=PostgresHook(postgres_conn_id="development"), **context):
     mlflow.set_experiment("iris_model")
     iris = load_iris()
     data = iris.data
@@ -102,7 +102,7 @@ def train_fn_iris(hook=PostgresHook(postgres_conn_id="postgres_test"), **context
         model.fit(x_train, y_train)
         return f1_score(y_valid, model.predict(x_valid), average="micro")
 
-    postgresHook = PostgresHook(postgres_conn_id="postgres-dev-optuna")
+    postgresHook = PostgresHook(postgres_conn_id="hyperparameter-store")
     storage = RDBStorage(url=postgresHook.get_uri())
     study = optuna.create_study(
         study_name="iris_model",
