@@ -12,6 +12,10 @@ x-common-env-vars: &common-env-vars
   ASTRONOMER_ENVIRONMENT: local
   UPBIT_ACCESS_KEY: None
   UPBIT_SECRET_KEY: None
+  AWS_ACCESS_KEY_ID: None
+  AWS_SECRET_ACCESS_KEY: None
+  MLFLOW_TRACKING_URI: http://host.docker.internal:5000
+  MLFLOW_S3_ENDPOINT_URL: http://host.docker.internal:9000
 
 networks:
   airflow:
@@ -68,6 +72,9 @@ services:
 
       - airflow_logs:/usr/local/airflow/logs
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 
 
   webserver:
@@ -108,6 +115,9 @@ services:
       start_period: 5s
       timeout: 60s
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 
   triggerer:
     image: ml-ops-project_c92c7b/airflow:latest
@@ -130,3 +140,6 @@ services:
       - /home/ubuntu/MLOps-project/include:/usr/local/airflow/include:z
 
       - airflow_logs:/usr/local/airflow/logs
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
