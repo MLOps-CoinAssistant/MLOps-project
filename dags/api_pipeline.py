@@ -2,11 +2,13 @@ from airflow.decorators import dag, task
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from module import upbit_to_cloudsql
+from datetime import datetime
 
 
 # Airflow DAG를 정의합니다.
 @dag(
     schedule_interval="0 * * * *",  # 매 시간 0분에 실행
+    start_date=datetime(2023, 5, 15),
     catchup=False,  # 이전 실행은 무시합니다.
     default_args={"owner": "Astro", "retries": 3},
     tags=["upbit_to_cloudsql"],
