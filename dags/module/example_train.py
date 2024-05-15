@@ -86,7 +86,7 @@ from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
 #     )
 
 
-def train_fn_iris(hook=PostgresHook(postgres_conn_id="development"), **context):
+def train_fn_iris(hook=PostgresHook(postgres_conn_id="postgres-default"), **context):
     mlflow.set_experiment("iris_model")
     iris = load_iris()
     data = iris.data
