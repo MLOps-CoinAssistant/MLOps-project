@@ -7,7 +7,7 @@ on:
 
 jobs:
   SSH:
-    # runs-on: ubuntu-2004-focal-v20240508
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: Run scripts in server
