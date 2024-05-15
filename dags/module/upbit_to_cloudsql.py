@@ -28,7 +28,6 @@ engine = create_engine(postgres_conn_str)
 
 # 데이터베이스 세션을 생성합니다.
 Session = sessionmaker(bind=engine)
-start_date = datetime.now() - timedelta(days=7)
 
 
 # PyUpbit을 사용하여 비트코인 시세 데이터를 가져오는 함수를 정의합니다.

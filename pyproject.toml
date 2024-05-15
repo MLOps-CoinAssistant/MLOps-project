@@ -10,6 +10,8 @@ packages = [{include = "ml_upbit_api"}]
 python = "^3.11"
 numpy = "^1.26.4"
 sqlalchemy = "1.4.52"
+pendulum = "^3.0.0"
+pyupbit = "^0.2.33"
 
 
 [build-system]

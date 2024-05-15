@@ -8,8 +8,6 @@ from module import upbit_to_cloudsql
 # Airflow DAG를 정의합니다.
 @dag(
     schedule_interval="0 * * * *",  # 매 시간 0분에 실행
-    start_date=datetime.now()
-    - timedelta(days=7),  # 최초 실행일은 현재 시간으로부터 일주일 전
     catchup=False,  # 이전 실행은 무시합니다.
     default_args={"owner": "Astro", "retries": 3},
     tags=["upbit_to_cloudsql"],
