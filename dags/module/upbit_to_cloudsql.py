@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, DateTime
+from sqlalchemy import create_engine, Column, DateTime, Float, MetaData
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import func
@@ -18,6 +18,11 @@ Base = declarative_base()
 class BtcOhlc(Base):
     __tablename__ = "btc_ohlc"
     time = Column(DateTime, primary_key=True)
+    open = Column(Float)
+    high = Column(Float)
+    low = Column(Float)
+    close = Column(Float)
+    volume = Column(Float)
 
 
 # PostgreSQL 연결 정보를 환경 변수에서 가져옵니다.
@@ -25,6 +30,14 @@ postgres_conn_str = os.environ.get("AIRFLOW__CORE__SQL_ALCHEMY_CONN")
 
 # 데이터베이스 연결 엔진을 생성합니다.
 engine = create_engine(postgres_conn_str)
+
+# 기존 테이블이 존재하는지 확인하기 위해 MetaData 객체를 생성합니다.
+metadata = MetaData(engine)
+
+# 데이터베이스에 테이블이 없는 경우에만 테이블을 생성합니다.
+if not engine.dialect.has_table(engine, "btc_ohlc"):
+    # 데이터베이스 테이블을 생성합니다.
+    Base.metadata.create_all(engine)
 
 # 데이터베이스 세션을 생성합니다.
 Session = sessionmaker(bind=engine)
@@ -39,42 +52,52 @@ def get_hourly_data(start_date, end_date):
         "KRW-BTC",
         interval="minute60",
         to=end_date.strftime("%Y-%m-%d %H:%M:%S"),
-        count=168,
+        count=168,  # 일주일 = 168시간
     )
     return df
 
 
 # 데이터를 수집하고 데이터베이스에 적재하는 함수를 정의합니다.
 def collect_and_load_data():
-    end_date = datetime.now()  # 현재 시간을 종료일로 설정합니다.
-    start_date = end_date - timedelta(
-        days=7
-    )  # 최초 실행 시에는 일주일치 데이터를 가져옵니다.
+    try:
+        end_date = datetime.now()  # 현재 시간을 종료일로 설정합니다.
+        start_date = end_date - timedelta(
+            days=7
+        )  # 최초 실행 시에는 일주일치 데이터를 가져옵니다.
 
-    # 데이터베이스 세션을 생성합니다.
-    session = Session()
-
-    # 최초 적재 여부를 확인합니다.
-    if not session.query(BtcOhlc).first():
-        # 최초 적재인 경우, 일주일치 데이터를 가져오기 위해 아무 작업도 하지 않습니다.
-        pass
-    else:
-        # 이후 적재인 경우, 마지막으로 적재된 데이터의 시간을 기준으로 현재 시간까지의 데이터를 가져옵니다.
+        # 중복된 데이터를 방지하기 위해 마지막으로 적재된 데이터의 시간을 확인합니다.
+        session = Session()
         last_loaded_time = session.query(func.max(BtcOhlc.time)).scalar()
-        start_date = max(start_date, last_loaded_time)
 
-    # 세션을 닫습니다.
-    session.close()
+        # 이미 적재된 데이터의 다음 시간부터 데이터를 가져옵니다.
+        if last_loaded_time:
+            start_date = max(start_date, last_loaded_time)
 
-    # 중복을 제외한 데이터를 수집합니다.
-    df = get_hourly_data(start_date, end_date)
+        # 데이터를 가져옵니다.
+        df = get_hourly_data(start_date, end_date)
 
-    if not df.empty:
-        # 데이터프레임을 리스트 형태로 변환합니다.
-        data_list = df.values.tolist()
-        # 데이터베이스에 데이터를 직접 삽입합니다.
-        conn = engine.connect()
-        conn.execute(BtcOhlc.__table__.insert(), data_list)
-        conn.close()
-    else:
-        print("No data retrieved.")
+        if not df.empty:
+            # 데이터베이스에 데이터를 삽입합니다.
+            for index, row in df.iterrows():
+                btc_ohlc_data = BtcOhlc(
+                    time=index,
+                    open=row["open"],
+                    high=row["high"],
+                    low=row["low"],
+                    close=row["close"],
+                    volume=row["volume"],
+                )
+                session.add(btc_ohlc_data)
+            session.commit()
+            print("Data successfully inserted into database.")
+        else:
+            print("No data retrieved.")
+    except Exception as e:
+        # 예외가 발생한 경우 로그를 출력합니다.
+        print(f"An error occurred: {e}")
+    finally:
+        session.close()
+
+
+# 데이터를 수집하고 데이터베이스에 적재합니다.
+collect_and_load_data()
