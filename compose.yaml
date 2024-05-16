@@ -2,43 +2,26 @@ version: '3.4'
 
 x-common-env-vars: &common-env-vars
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
-  AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql://postgres:postgres@postgres:5432
-  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://postgres:postgres@postgres:5432
+  AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+asyncpg://postgres:ls_mle_course@34.64.43.219:5432
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+asyncpg://postgres:ls_mle_course@34.64.43.219:5432
   AIRFLOW__CORE__LOAD_EXAMPLES: "False"
   AIRFLOW__CORE__FERNET_KEY: "d6Vefz3G9U_ynXB3cr7y_Ak35tAHkEGAVxuz_B-jzWw="
   AIRFLOW__WEBSERVER__SECRET_KEY: "ml-ops-project_c92c7b"
   AIRFLOW__WEBSERVER__RBAC: "True"
   AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
   ASTRONOMER_ENVIRONMENT: local
+  UPBIT_ACCESS_KEY: yX0KRIG7nh6mpsMjSmzSudVBozU9xnwuQMdif7Be
+  UPBIT_SECRET_KEY: k3Z3nEIvdBhqh7g8CtyAI8jfKsQsFY1GHqxOaPAE
 
 networks:
   airflow:
     driver: bridge
 
 volumes:
-  # postgres_data:
-  #   driver: local
   airflow_logs:
     driver: local
 
 services:
-  # postgres:
-  #   image: docker.io/postgres:12.6
-  #   restart: unless-stopped
-  #   networks:
-  #     - airflow
-  #   labels:
-  #     io.astronomer.docker: "true"
-  #     io.astronomer.docker.cli: "true"
-  #   ports:
-  #     - 127.0.0.1:5432:5432
-  #   volumes:
-
-  #     - postgres_data:/var/lib/postgresql/data
-
-  #   environment:
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: postgres
 
   scheduler:
     image: ml-ops-project_c92c7b/airflow:latest
@@ -52,9 +35,8 @@ services:
       io.astronomer.docker: "true"
       io.astronomer.docker.cli: "true"
       io.astronomer.docker.component: "airflow-scheduler"
-    # depends_on:
-    #   - postgres
-    environment: *common-env-vars
+    environment:
+      <<: *common-env-vars
     volumes:
       - /home/ubuntu/MLOps-project/dags:/usr/local/airflow/dags:z
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z
@@ -87,8 +69,8 @@ services:
       io.astronomer.docker.component: "airflow-webserver"
     depends_on:
       - scheduler
-      # - postgres
-    environment: *common-env-vars
+    environment:
+      <<: *common-env-vars
     ports:
       - 127.0.0.1:8080:8080
     volumes:
@@ -119,9 +101,8 @@ services:
       io.astronomer.docker: "true"
       io.astronomer.docker.cli: "true"
       io.astronomer.docker.component: "airflow-triggerer"
-    # depends_on:
-    #   - postgres
-    environment: *common-env-vars
+    environment:
+      <<: *common-env-vars
     volumes:
       - /home/ubuntu/MLOps-project/dags:/usr/local/airflow/dags:z
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z

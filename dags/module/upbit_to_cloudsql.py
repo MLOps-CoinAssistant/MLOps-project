@@ -10,8 +10,10 @@ from datetime import datetime, timedelta
 import os
 
 # UPbit의 access key와 secret key를 환경 변수에서 가져옵니다.
-UPBIT_ACCESS_KEY = os.environ.get("UPBIT_ACCESS_KEY")
-UPBIT_SECRET_KEY = os.environ.get("UPBIT_SECRET_KEY")
+UPBIT_ACCESS_KEY = os.getenv("UPBIT_ACCESS_KEY")
+UPBIT_SECRET_KEY = os.getenv("UPBIT_SECRET_KEY")
+# print(f"UPBIT_ACCESS_KEY: {UPBIT_ACCESS_KEY}")
+# print(f"UPBIT_SECRET_KEY: {UPBIT_SECRET_KEY}")
 
 if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
     raise ValueError("Upbit API keys are not set in the environment variables.")
