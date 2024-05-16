@@ -1,8 +1,9 @@
-from airflow.decorators import dag, task
+from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from module import upbit_to_cloudsql
+from module.upbit_to_cloudsql import collect_and_load_data
 from datetime import datetime
+import asyncio
 
 
 # Airflow DAG를 정의합니다.
@@ -12,17 +13,19 @@ from datetime import datetime
     catchup=False,  # 이전 실행은 무시합니다.
     default_args={"owner": "Astro", "retries": 3},
     tags=["upbit_to_cloudsql"],
-)  # DAG에 태그를 추가합니다.
+)
 def api_pipeline():
     # 데이터 수집 및 적재 작업을 정의하고 Airflow DAG에 추가합니다.
     start_task = EmptyOperator(task_id="start_task")
     task_collect_and_load_data = PythonOperator(
         task_id="collect_and_load_data",
-        python_callable=upbit_to_cloudsql.collect_and_load_data,
+        python_callable=lambda: asyncio.run(collect_and_load_data()),
     )
     end_task = EmptyOperator(task_id="end_task")
 
+    # 작업 순서를 정의합니다.
     start_task >> task_collect_and_load_data >> end_task
 
 
+# DAG를 생성합니다.
 api_pipeline()
