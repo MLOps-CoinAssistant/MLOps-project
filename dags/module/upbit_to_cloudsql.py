@@ -1,19 +1,21 @@
-import asyncio
-import aiohttp
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import Column, DateTime, Float, MetaData
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.future import select
-from sqlalchemy.sql import func
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from sqlalchemy import create_engine, Column, DateTime, Float, MetaData, func, inspect
+from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime, timedelta
 import os
+import requests
+import time
+import jwt
+import uuid
 
 # UPbit의 access key와 secret key를 환경 변수에서 가져옵니다.
-UPBIT_ACCESS_KEY = os.getenv("UPBIT_ACCESS_KEY")
-UPBIT_SECRET_KEY = os.getenv("UPBIT_SECRET_KEY")
-# print(f"UPBIT_ACCESS_KEY: {UPBIT_ACCESS_KEY}")
-# print(f"UPBIT_SECRET_KEY: {UPBIT_SECRET_KEY}")
+# UPBIT_ACCESS_KEY = os.environ.get("UPBIT_ACCESS_KEY")
+# UPBIT_SECRET_KEY = os.environ.get("UPBIT_SECRET_KEY")
+# print("UPBIT_ACCESS_KEY:", os.environ.get("UPBIT_ACCESS_KEY"))
+# print("UPBIT_SECRET_KEY:", os.environ.get("UPBIT_SECRET_KEY"))
+# print(os.environ.get("AIRFLOW__CORE__SQL_ALCHEMY_CONN"))
+# 환경변수로 불러오는게  안돼서 하드코딩해서 테스트중(키는 이메일로 보내놓음)
 
 if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
     raise ValueError("Upbit API keys are not set in the environment variables.")
@@ -35,94 +37,216 @@ class BtcOhlc(Base):
 
 # PostgreSQL 연결 정보를 환경 변수에서 가져옵니다.
 postgres_conn_str = os.environ.get("AIRFLOW__CORE__SQL_ALCHEMY_CONN")
-
+# print(postgres_conn_str)
 if not postgres_conn_str:
     raise ValueError(
         "Postgres connection string is not set in the environment variables."
     )
 
 # 데이터베이스 연결 엔진을 생성합니다.
-engine = create_async_engine(postgres_conn_str, echo=True)
+engine = create_engine(postgres_conn_str)
 
 # 데이터베이스 세션을 생성합니다.
-async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+Session = sessionmaker(bind=engine)
+session = Session()
 
 
-# 비동기적으로 Upbit API를 사용하여 비트코인 시세 데이터를 가져오는 함수를 정의합니다.
-async def fetch_ohlcv_data(session, market, to, count):
+# JWT 생성 함수
+def generate_jwt_token(access_key, secret_key):
+    payload = {"access_key": access_key, "nonce": str(uuid.uuid4())}
+    jwt_token = jwt.encode(payload, secret_key, algorithm="HS256")
+    # print(f'jwt_token: {jwt_token}')
+    authorization_token = f"Bearer {jwt_token}"
+    return authorization_token
+
+
+# 남아있는 요청 수를 확인하고 대기 시간을 조절하는 함수.
+def check_remaining_requests(headers):
+    remaining_req = headers.get("Remaining-Req")
+    if remaining_req:
+        group, min_req, sec_req = remaining_req.split("; ")
+        min_req = int(min_req.split("=")[1])
+        sec_req = int(sec_req.split("=")[1])
+        if sec_req < 5:
+            print(f"Rate limit close to being exceeded. Waiting for 1 second...")
+            time.sleep(1)
+        return min_req, sec_req
+    return None, None
+
+
+# 동기적으로 Upbit API를 사용하여 비트코인 시세 데이터를 가져오는 함수를 정의합니다.
+def fetch_ohlcv_data(market, to, count, results):
     url = f"https://api.upbit.com/v1/candles/minutes/60?market={market}&to={to}&count={count}"
-    headers = {"Accept": "application/json"}
-    async with session.get(url, headers=headers) as response:
-        return await response.json()
+    headers = {
+        "Accept": "application/json",
+        "Authorization": generate_jwt_token(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY),
+    }
+    print(f"Calling API with URL: {url}")  # API 호출 URL 로그 출력
+    backoff_time = 1
+    max_backoff_time = 64  # 최대 대기 시간 설정 (64초). Ecponential Backoff방식 : 429에러 발생시 처음1초 대기 후 재시도하고, 이후에는 대기시간을 2배씩 늘려가면서 최대 64초까지 대기시킴.
+    while True:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            min_req, sec_req = check_remaining_requests(response.headers)
+            if min_req is not None and sec_req is not None and sec_req < 5:
+                print(f"Rate limit close to being exceeded. Waiting for 1 second...")
+                time.sleep(1)
+            return data
+        elif response.status_code == 429:
+            print(
+                f"Rate limit exceeded. Waiting for {backoff_time} seconds before retrying..."
+            )
+            time.sleep(backoff_time)
+            backoff_time = min(
+                backoff_time * 2, max_backoff_time
+            )  # Exponential backoff
+        else:
+            print(f"Error fetching data: {response.status_code}, {response.text}")
+            return None
 
 
-# 비동기적으로 1년치 데이터를 여러 번 요청하여 가져오는 함수
-async def fetch_data(start_date, end_date):
-    market = "KRW-BTC"  # 비트코인 시세 데이터를 가져올 시장 (KRW-BTC)
+# 동기적으로 1년치 데이터를 여러 번 요청하여 가져오는 함수
+def fetch_data(start_date, end_date):
+    market = "KRW-BTC"
     data = []
-    async with aiohttp.ClientSession() as session:
+    results = []
+    max_workers = 5  # 적절한 스레드 수 설정 . 일반적으로 I/O 바운드 작업에서는 5~10개의 스레드가 적절한 성능을 제공한다고 함. 실험을 통해 적절히 조절가능
+    print(
+        f"Fetching data from {start_date} to {end_date}"
+    )  # 데이터 가져오는 범위 로그 추가
+    with ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:  # max_workers 로 설정된 고정된 스레풀을 사용할 수 있도록 ThreadPoolExecutor 사용(과부하방지)
+        futures = []
         while start_date < end_date:
             to_date = end_date.strftime("%Y-%m-%dT%H:%M:%S")
-            new_data = await fetch_ohlcv_data(session, market, to_date, 200)
-            if not new_data:
-                break
-            data.extend(new_data)
-            end_date = datetime.strptime(
-                new_data[-1]["candle_date_time_utc"], "%Y-%m-%dT%H:%M:%S"
-            ) - timedelta(minutes=60)
+            futures.append(
+                executor.submit(fetch_ohlcv_data, market, to_date, 200, results)
+            )
+            end_date -= timedelta(minutes=200 * 60)
+
+        # for future in as_completed(futures):
+        #     result = future.result()
+        #     results.append(result)
+        for future in as_completed(futures):
+            try:
+                future_result = (
+                    future.result()
+                )  # 이 라인은 fetch_ohlcv_data의 실행 결과를 대기합니다. future_result 변수에 할당.
+                if future_result:
+                    print(
+                        f"Data fetched for future with result: {future_result}"
+                    )  # URL과 함께 결과 로그 추가
+                    data.extend(future_result)
+                else:
+                    print("No result from future")  # 결과가 없는 경우 로그
+            except Exception as e:
+                print(f"Exception occurred while fetching data: {e}")
+
     return data
 
 
-# 비동기적으로 데이터를 수집하고 데이터베이스에 적재하는 함수
-async def collect_and_load_data():
-    async with async_session() as session:
-        async with session.begin():
-            metadata = MetaData()
-            if not engine.dialect.has_table(engine, "btc_ohlc"):
-                Base.metadata.create_all(bind=engine)
+# 데이터를 수집하고 데이터베이스에 적재하는 함수
+def collect_and_load_data():
+    start_time = time.time()  # 시작 시간 기록
+    metadata = MetaData()
+    inspector = inspect(
+        engine
+    )  # sqlalchemy에서 데이터베이스 메타데이터를 추출하는데 사용하는 방식. 테이블 존재여부의 작업을 할때 권장된다.
+    if not inspector.has_table("btc_ohlc", engine):
+        Base.metadata.create_all(bind=engine)
+        print("Table 'btc_ohlc' created.")  # 테이블 생성 로그 추가
 
-            try:
-                end_date = datetime.now()  # 현재 시간을 종료일로 설정합니다.
-                start_date = end_date - timedelta(
-                    days=365
-                )  # 최초 실행 시에는 1년치 데이터를 가져옵니다.
+    try:
+        end_date = datetime.now()  # 현재 시간을 종료 시간으로 설정
+        result = None  # 초기화
 
-                # 중복된 데이터를 방지하기 위해 마지막으로 적재된 데이터의 시간을 확인합니다.
-                result = await session.execute(select([func.max(BtcOhlc.time)]))
-                last_loaded_time = result.scalar()
+        try:
+            # 데이터베이스에서 가장 최근 데이터의 시간을 가져옵니다.
+            result = session.query(func.max(BtcOhlc.time)).scalar()
+            print(f"Query result: {result}")  # 쿼리 결과를 로그에 남김
+        except Exception as query_exception:
+            print(f"Query exception occurred: {query_exception}")
+            # result가 None이 되도록 함으로써 이후 로직에서 올바르게 처리되도록 함
+            result = None
+        last_loaded_time = result
 
-                if last_loaded_time:
-                    start_date = max(
-                        start_date, last_loaded_time + timedelta(minutes=60)
+        # 만약 최근 로드된 데이터 시간이 존재하면, 그 시간 이후로 데이터를 요청합니다.
+        # 그렇지 않으면, 기본적으로 1년 전부터 데이터를 요청합니다.
+        if last_loaded_time and last_loaded_time < end_date:
+            start_date = last_loaded_time + timedelta(
+                minutes=60
+            )  # 최근 데이터 이후 1시간부터 시작
+        else:
+            start_date = end_date - timedelta(
+                days=365
+            )  # 데이터가 없거나 가장 최근 데이터가 현재 시간 이후인 경우
+            print(
+                "No recent data found or invalid last loaded time. Fetching data from one year ago."
+            )
+
+        print("확인 1")
+        data = fetch_data(start_date, end_date)
+
+        if data:
+            print(
+                f"Inserting {len(data)} records into the database."
+            )  # 삽입할 데이터 수를 로그에 남김
+            # 중복 제거를 위한 데이터 삽입 쿼리
+            insert_query = """
+            INSERT INTO btc_ohlc (time, open, high, low, close, volume)
+            SELECT * FROM (SELECT :time AS time, :open AS open, :high AS high, :low AS low, :close AS close, :volume AS volume) AS temp
+            WHERE NOT EXISTS (
+                SELECT 1 FROM btc_ohlc WHERE time = temp.time
+            );
+            """
+
+            for item in data:
+                try:
+                    time_value = datetime.strptime(
+                        item["candle_date_time_kst"], "%Y-%m-%dT%H:%M:%S"
                     )
-
-                # 데이터를 가져옵니다.
-                data = await fetch_data(start_date, end_date)
-
-                if data:
-                    # 데이터베이스에 데이터를 대량 삽입합니다.
-                    values = [
-                        BtcOhlc(
-                            time=datetime.strptime(
-                                item["candle_date_time_kst"], "%Y-%m-%dT%H:%M:%S"
-                            ),
-                            open=item["opening_price"],
-                            high=item["high_price"],
-                            low=item["low_price"],
-                            close=item["trade_price"],
-                            volume=item["candle_acc_trade_volume"],
+                    existing_record = (
+                        session.query(BtcOhlc)
+                        .filter(BtcOhlc.time == time_value)
+                        .first()
+                    )
+                    if not existing_record:
+                        print(
+                            f"Inserting record: time={time_value}, open={item['opening_price']}, high={item['high_price']}, low={item['low_price']}, close={item['trade_price']}, volume={item['candle_acc_trade_volume']}"
                         )
-                        for item in data
-                    ]
-                    session.add_all(values)
-                    await session.commit()
-                    print("Data successfully inserted into database.")
-                else:
-                    print("No data retrieved.")
-            except Exception as e:
-                print(f"An error occurred: {e}")
+                        session.execute(
+                            insert_query,
+                            {
+                                "time": time_value,
+                                "open": item["opening_price"],
+                                "high": item["high_price"],
+                                "low": item["low_price"],
+                                "close": item["trade_price"],
+                                "volume": item["candle_acc_trade_volume"],
+                            },
+                        )
+                except Exception as e:
+                    print(f"Error inserting record: {e}, data: {item}")
+            session.flush()  # 데이터베이스에 변경사항을 플러시
+            session.commit()
+            print("Data insertion completed and committed.")
+
+            # 커밋 후 데이터베이스에서 데이터 확인
+            new_data_count = session.query(BtcOhlc).count()
+            print(f"Total records in the database after insertion: {new_data_count}")
+
+        else:
+            print("No data retrieved.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        session.rollback()
+    finally:
+        session.close()
+        end_time = time.time()  # 종료 시간 기록
+        elapsed_time = end_time - start_time
+        print(f"Elapsed time for data load: {elapsed_time} seconds")
 
 
-# 직접 실행 시 데이터를 수집하고 데이터베이스에 적재합니다.
-
-asyncio.run(collect_and_load_data())
+collect_and_load_data()
