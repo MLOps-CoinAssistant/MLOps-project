@@ -14,6 +14,7 @@ from optuna.storages import RDBStorage
 import mlflow
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
+from dags.module.info.connections import AirflowConnections
 
 
 # def train_fn(**context):
@@ -86,7 +87,9 @@ from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
 #     )
 
 
-def train_fn_iris(hook=PostgresHook(postgres_conn_id="postgres-default"), **context):
+def train_fn_iris(
+    hook=PostgresHook(postgres_conn_id=AirflowConnections.DEVELOPMENT.value), **context
+):
     mlflow.set_experiment("iris_model")
     iris = load_iris()
     data = iris.data
@@ -102,7 +105,9 @@ def train_fn_iris(hook=PostgresHook(postgres_conn_id="postgres-default"), **cont
         model.fit(x_train, y_train)
         return f1_score(y_valid, model.predict(x_valid), average="micro")
 
-    postgresHook = PostgresHook(postgres_conn_id="hyperparameter-store")
+    postgresHook = PostgresHook(
+        postgres_conn_id=AirflowConnections.DEVELOPMENT_HYPERPARAMETER_STORE.value
+    )
     storage = RDBStorage(url=postgresHook.get_uri())
     study = optuna.create_study(
         study_name="iris_model",
