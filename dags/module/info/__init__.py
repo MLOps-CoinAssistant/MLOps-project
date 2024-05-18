@@ -1,3 +1,3 @@
-from . import connections
+from . import connections, api, coins
 
-all = ["AirflowConnections"]
+all = ["AirflowConnections", "api", "coins"]
