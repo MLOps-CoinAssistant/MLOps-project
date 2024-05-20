@@ -10,12 +10,23 @@ x-common-env-vars: &common-env-vars
   AIRFLOW__WEBSERVER__RBAC: "True"
   AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
   ASTRONOMER_ENVIRONMENT: local
-  UPBIT_ACCESS_KEY: None
-  UPBIT_SECRET_KEY: None
+  UPBIT_ACCESS_KEY: gJK3LExkgPKN2ApsBvPT5lqU4xE2MxcxIcyvVnF7
+  UPBIT_SECRET_KEY: VAHQl00xG5TcXCSsu6BreSKox49BYLJ5xTrRxayV
   AWS_ACCESS_KEY_ID: None
   AWS_SECRET_ACCESS_KEY: None
   MLFLOW_TRACKING_URI: http://host.docker.internal:5000
   MLFLOW_S3_ENDPOINT_URL: http://host.docker.internal:9000
+
+  AIRFLOW__EMAIL__EMAIL_BACKEND: 'airflow.utils.email.send_email_smtp'
+  AIRFLOW__EMAIL__EMAIL_CONN_ID: smtp_default
+  AIRFLOW__SMTP__SMTP_MAIL_FROM: 'email@naver.com'
+
+  AIRFLOW__SMTP__SMTP_HOST: 'smtp.naver.com'
+  AIRFLOW__SMTP__SMTP_STARTTLS: 'True'
+  AIRFLOW__SMTP__SMTP_SSL: 'False'
+  AIRFLOW__SMTP__SMTP_PORT: 587
+  AIRFLOW__SMTP__SMTP_USER: 'None'
+  AIRFLOW__SMTP__SMTP_PASSWORD: 'None'
 
 networks:
   airflow:
@@ -98,6 +109,7 @@ services:
       - scheduler
       # - postgres
     environment: *common-env-vars
+
     ports:
       - 127.0.0.1:8080:8080
     volumes:
