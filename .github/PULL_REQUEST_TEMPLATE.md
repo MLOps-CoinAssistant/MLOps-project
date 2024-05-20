@@ -8,5 +8,5 @@
     - 리뷰어가 참고할 사항
     
 ## Issue Tag
-    - Closed | Fixed: 이슈 태그 번호
-    - See also: 참고할 링크
+- Closed | Fixed: 이슈 태그 번호
+- See also: 참고할 링크
