@@ -11,7 +11,6 @@ class Coins(Enum):
     EOS = "EOS"
     XLM = "XLM"
     TRX = "TRX"
-    BNB = "BNB"
 
     @classmethod
     def list(cls):
