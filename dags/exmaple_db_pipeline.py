@@ -13,17 +13,17 @@ from module import example_db
     default_args={"owner": "Astro", "retries": 3},
     tags=["postgresql", "db"],
 )
-def db_pipeline():
-    start_task = EmptyOperator(task_id="start_task")
+def db_pipeline() -> None:
+    start_task: EmptyOperator = EmptyOperator(task_id="start_task")
 
-    get_KRW_BTC_data = PythonOperator(
+    get_KRW_BTC_data: PythonOperator = PythonOperator(
         task_id="get_KRW_BTC_data",
         python_callable=example_db.get_data,
     )
 
-    end_task = EmptyOperator(task_id="end_task")
+    end_task: EmptyOperator = EmptyOperator(task_id="end_task")
 
-    start_task >> [get_KRW_BTC_data] >> end_task
+    start_task >> get_KRW_BTC_data >> end_task
 
 
 db_pipeline()

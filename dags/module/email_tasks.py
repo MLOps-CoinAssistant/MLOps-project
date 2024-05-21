@@ -1,7 +1,7 @@
 from airflow.operators.email import EmailOperator
 
 
-def get_success_email_operator(to_email):
+def get_success_email_operator(to_email: str) -> EmailOperator:
     return EmailOperator(
         task_id="send_success_email",
         to=to_email,
@@ -12,7 +12,7 @@ def get_success_email_operator(to_email):
     )
 
 
-def get_failure_email_operator(to_email):
+def get_failure_email_operator(to_email: str) -> EmailOperator:
     return EmailOperator(
         task_id="send_failure_email",
         to=to_email,

@@ -12,20 +12,20 @@ from module import coin_news_api_call, email_tasks
     doc_md=__doc__,
     tags=["postgresql", "db", "news"],
 )
-def news_api_call_pipeline():
-    start_task = EmptyOperator(task_id="start_task")
+def news_api_call_pipeline() -> None:
+    start_task: EmptyOperator = EmptyOperator(task_id="start_task")
 
-    create_db_task = PythonOperator(
+    create_db_task: PythonOperator = PythonOperator(
         task_id="create_database_if_not_exists",
         python_callable=coin_news_api_call.create_database_if_not_exists,
     )
 
-    clear_and_save_news_task = PythonOperator(
+    clear_and_save_news_task: PythonOperator = PythonOperator(
         task_id="clear_and_save_news",
         python_callable=coin_news_api_call.clear_and_save_news,
     )
 
-    end_task = EmptyOperator(task_id="end_task")
+    end_task: EmptyOperator = EmptyOperator(task_id="end_task")
 
     # 이메일 태스크 추가
     success_email = email_tasks.get_success_email_operator(to_email="raphdoh@naver.com")

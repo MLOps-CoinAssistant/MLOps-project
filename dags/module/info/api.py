@@ -11,3 +11,4 @@ class APIInformation(Enum):
     )
     COINDESK_API_URL = "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=json"
     NAVER_NEWS_API_URL = "https://openapi.naver.com/v1/search/news.json"
+    OPENAI_API_KEY = Variable.get("openai_api_key")
