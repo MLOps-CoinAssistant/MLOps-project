@@ -11,3 +11,5 @@ airflow.cfg
 airflow.db
 compose.yaml
 mlflow-compose.yaml
+*.yaml
+*.yml
