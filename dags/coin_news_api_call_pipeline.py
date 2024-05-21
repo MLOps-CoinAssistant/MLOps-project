@@ -7,7 +7,7 @@ from module import coin_news_api_call, email_tasks
 
 @dag(
     start_date=datetime(2024, 5, 18),
-    schedule_interval="*/10 * * * *",  # 10분마다 실행되도록 설정
+    schedule_interval="10 * * * *",  # 10분마다 실행되도록 설정
     catchup=False,
     doc_md=__doc__,
     tags=["postgresql", "db", "news"],
