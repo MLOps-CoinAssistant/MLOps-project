@@ -4,7 +4,7 @@ import pandas as pd
 
 
 def get_data(**context):
-    hook = PostgresHook(postgres_conn_id=AirflowConnections.DEVELOPMENT.value)
+    hook = PostgresHook(postgres_conn_id=AirflowConnections.POSTGRES_DEFAULT.value)
     conn = hook.get_conn()
     stmt = """
             SELECT *

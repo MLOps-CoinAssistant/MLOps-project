@@ -45,7 +45,9 @@ news_table = Table(
 
 
 def get_postgres_engine(**context):
-    postgres_hook = PostgresHook(postgres_conn_id=AirflowConnections.DEVELOPMENT.value)
+    postgres_hook = PostgresHook(
+        postgres_conn_id=AirflowConnections.POSTGRES_DEFAULT.value
+    )
     engine = create_engine(postgres_hook.get_uri())
     return engine
 

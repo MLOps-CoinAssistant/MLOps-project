@@ -88,7 +88,8 @@ from dags.module.info.connections import AirflowConnections
 
 
 def train_fn_iris(
-    hook=PostgresHook(postgres_conn_id=AirflowConnections.DEVELOPMENT.value), **context
+    hook=PostgresHook(postgres_conn_id=AirflowConnections.POSTGRES_DEFAULT.value),
+    **context,
 ):
     mlflow.set_experiment("iris_model")
     iris = load_iris()
@@ -106,7 +107,7 @@ def train_fn_iris(
         return f1_score(y_valid, model.predict(x_valid), average="micro")
 
     postgresHook = PostgresHook(
-        postgres_conn_id=AirflowConnections.DEVELOPMENT_HYPERPARAMETER_STORE.value
+        postgres_conn_id=AirflowConnections.HYPERPARAMETER_STORE.value
     )
     storage = RDBStorage(url=postgresHook.get_uri())
     study = optuna.create_study(
