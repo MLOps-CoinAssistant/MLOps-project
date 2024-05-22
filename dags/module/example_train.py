@@ -14,7 +14,7 @@ from optuna.storages import RDBStorage
 import mlflow
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
-
+from dags.module.info.connections import Connections
 
 # def train_fn(**context):
 #     mlflow.set_experiment("hospital_model")
@@ -86,7 +86,12 @@ from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
 #     )
 
 
-def train_fn_iris(hook=PostgresHook(postgres_conn_id="postgres_test"), **context):
+def train_fn_iris(
+    hook: PostgresHook = PostgresHook(
+        postgres_conn_id=Connections.POSTGRES_DEFAULT.value
+    ),
+    **context: dict,
+) -> None:
     mlflow.set_experiment("iris_model")
     iris = load_iris()
     data = iris.data
@@ -95,32 +100,34 @@ def train_fn_iris(hook=PostgresHook(postgres_conn_id="postgres_test"), **context
         data, label, test_size=0.3, shuffle=True, stratify=label
     )
 
-    def objective(trial):
+    def objective(trial: optuna.trial.Trial) -> float:
         n_estimators = trial.suggest_int("n_estimators", 2, 100)
         max_depth = int(trial.suggest_int("max_depth", 1, 32))
         model = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth)
         model.fit(x_train, y_train)
         return f1_score(y_valid, model.predict(x_valid), average="micro")
 
-    postgresHook = PostgresHook(postgres_conn_id="postgres-dev-optuna")
-    storage = RDBStorage(url=postgresHook.get_uri())
-    study = optuna.create_study(
+    postgresHook: PostgresHook = PostgresHook(
+        postgres_conn_id=Connections.HYPERPARAMETER_STORE.value
+    )
+    storage: RDBStorage = RDBStorage(url=postgresHook.get_uri())
+    study: optuna.study.Study = optuna.create_study(
         study_name="iris_model",
         direction="maximize",
         storage=storage,
         load_if_exists=True,
     )
     study.optimize(objective, n_trials=10)
-    best_params = study.best_params
-    best_metric = study.best_value
+    best_params: dict = study.best_params
+    best_metric: float = study.best_value
     print("Best params: ", best_params)
     print("Best metric: ", best_metric)
-    model = RandomForestClassifier(**best_params)
+    model: RandomForestClassifier = RandomForestClassifier(**best_params)
     model.fit(x_train, y_train)
     print(
         "Validation Score: ", f1_score(y_valid, model.predict(x_valid), average="micro")
     )
-    metrics = {
+    metrics: dict = {
         "f1_score": f1_score(y_valid, model.predict(x_valid), average="micro"),
     }
     with mlflow.start_run():
@@ -135,17 +142,17 @@ def train_fn_iris(hook=PostgresHook(postgres_conn_id="postgres_test"), **context
     )
 
 
-def create_model_version(model_name: str, **context):
-    run_id = context["ti"].xcom_pull(key="run_id")
-    model_uri = context["ti"].xcom_pull(key="model_uri")
-    eval_metric = context["ti"].xcom_pull(key="eval_metric")
-    client = MlflowClient()
+def create_model_version(model_name: str, **context: dict) -> None:
+    run_id: str = context["ti"].xcom_pull(key="run_id")
+    model_uri: str = context["ti"].xcom_pull(key="model_uri")
+    eval_metric: str = context["ti"].xcom_pull(key="eval_metric")
+    client: MlflowClient = MlflowClient()
     try:
         client.create_registered_model(model_name)
     except Exception as e:
         print("Model already exists")
-    current_metric = client.get_run(run_id).data.metrics[eval_metric]
-    model_source = RunsArtifactRepository.get_underlying_uri(model_uri)
+    current_metric: float = client.get_run(run_id).data.metrics[eval_metric]
+    model_source: str = RunsArtifactRepository.get_underlying_uri(model_uri)
     model_version = client.create_model_version(
         model_name, model_source, run_id, description=f"{eval_metric}: {current_metric}"
     )
@@ -153,10 +160,10 @@ def create_model_version(model_name: str, **context):
     print(f"Done Create model version, model_version: {model_version}")
 
 
-def transition_model_stage(model_name: str, **context):
-    version = context["ti"].xcom_pull(key="model_version")
-    eval_metric = context["ti"].xcom_pull(key="eval_metric")
-    client = MlflowClient()
+def transition_model_stage(model_name: str, **context: dict) -> None:
+    version: str = context["ti"].xcom_pull(key="model_version")
+    eval_metric: str = context["ti"].xcom_pull(key="eval_metric")
+    client: MlflowClient = MlflowClient()
     production_model = None
     current_model = client.get_model_version(model_name, version)
     filter_string = f"name='{current_model.name}'"
@@ -170,8 +177,10 @@ def transition_model_stage(model_name: str, **context):
         )
         production_model = current_model
     else:
-        current_metric = client.get_run(current_model.run_id).data.metrics[eval_metric]
-        production_metric = client.get_run(production_model.run_id).data.metrics[
+        current_metric: float = client.get_run(current_model.run_id).data.metrics[
+            eval_metric
+        ]
+        production_metric: float = client.get_run(production_model.run_id).data.metrics[
             eval_metric
         ]
         if current_metric > production_metric:

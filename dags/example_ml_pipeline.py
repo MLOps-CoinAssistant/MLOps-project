@@ -13,27 +13,27 @@ from module import example_train
     default_args={"owner": "Astro", "retries": 3},
     tags=["example"],
 )
-def ml_pipeline():
-    start_task = EmptyOperator(task_id="start_task")
+def ml_pipeline() -> None:
+    start_task: EmptyOperator = EmptyOperator(task_id="start_task")
 
-    train_iris_task = PythonOperator(
+    train_iris_task: PythonOperator = PythonOperator(
         task_id="train_iris_task",
         python_callable=example_train.train_fn_iris,
     )
 
-    iris_model_create_task = PythonOperator(
+    iris_model_create_task: PythonOperator = PythonOperator(
         task_id="iris_model_create_task",
         python_callable=example_train.create_model_version,
         op_kwargs={"model_name": "iris_model"},
     )
 
-    iris_model_transition_task = PythonOperator(
+    iris_model_transition_task: PythonOperator = PythonOperator(
         task_id="iris_model_transition_task",
         python_callable=example_train.transition_model_stage,
         op_kwargs={"model_name": "iris_model"},
     )
 
-    end_task = EmptyOperator(task_id="end_task")
+    end_task: EmptyOperator = EmptyOperator(task_id="end_task")
 
     start_task >> [train_iris_task] >> end_task
     train_iris_task >> iris_model_create_task >> iris_model_transition_task

@@ -1,3 +1,3 @@
-from . import example_train, upbit_to_cloudsql
+from . import example_train, example_db, coin_news_api_call
 
-all = ["example_train", "upbit_to_cloudsql"]
+all = ["example_train", "example_db", "coin_news_api_call"]
