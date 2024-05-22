@@ -11,15 +11,8 @@ import jwt
 import uuid
 import threading
 
-# UPbit의 access key와 secret key를 환경 변수에서 가져옵니다.
-# UPBIT_ACCESS_KEY = os.environ.get("UPBIT_ACCESS_KEY")
-# UPBIT_SECRET_KEY = os.environ.get("UPBIT_SECRET_KEY")
-# print("UPBIT_ACCESS_KEY:", os.environ.get("UPBIT_ACCESS_KEY"))
-# print("UPBIT_SECRET_KEY:", os.environ.get("UPBIT_SECRET_KEY"))
-# print(os.environ.get("AIRFLOW__CORE__SQL_ALCHEMY_CONN"))
-# 환경변수로 불러오는게  안돼서 하드코딩해서 테스트중(키는 이메일로 보내놓음)
-UPBIT_ACCESS_KEY = "6zfu7mYxCEkUW6mrUXVw5PTe8WobvBK6yFm45Jty"
-UPBIT_SECRET_KEY = "K3xyuFgVLbwYcu3UZTCPBjjFXbZzjW4vd3F5oMeT"
+# 환경변수로 불러오는게  안돼서 하드코딩해서 테스트중(키는 따로저장)
+
 
 if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
     raise ValueError("Upbit API keys are not set in the environment variables.")
@@ -56,30 +49,26 @@ session = Session(bind=engine)
 
 
 # JWT 생성 함수
-def generate_jwt_token(access_key, secret_key):
+def generate_jwt_token(access_key: str, secret_key: str):
     payload = {"access_key": access_key, "nonce": str(uuid.uuid4())}
     jwt_token = jwt.encode(payload, secret_key, algorithm="HS256")
-    # print(f'jwt_token: {jwt_token}')
     authorization_token = f"Bearer {jwt_token}"
     return authorization_token
 
 
 # 남아있는 요청 수를 확인하고 대기 시간을 조절하는 함수.
-def check_remaining_requests(headers):
+def check_remaining_requests(headers: dict):
     remaining_req = headers.get("Remaining-Req")
     if remaining_req:
         group, min_req, sec_req = remaining_req.split("; ")
         min_req = int(min_req.split("=")[1])
         sec_req = int(sec_req.split("=")[1])
-        # if sec_req < 5:
-        #     print(f"Rate limit close to being exceeded. Waiting for 1 second...")
-        #     time.sleep(1)
         return min_req, sec_req
     return None, None
 
 
 # 동기적으로 Upbit API를 사용하여 비트코인 시세 데이터를 가져오는 함수를 정의합니다.
-def fetch_ohlcv_data(market, to, count):
+def fetch_ohlcv_data(market: str, to: str, count: int):
     url = f"https://api.upbit.com/v1/candles/minutes/60?market={market}&to={to}&count={count}"
     headers = {
         "Accept": "application/json",
@@ -116,11 +105,11 @@ def fetch_ohlcv_data(market, to, count):
 
 
 # 동기적으로 1년치 데이터를 여러 번 요청하여 가져오는 함수
-def fetch_data(start_date, end_date):
+def fetch_data(start_date: datetime, end_date: datetime):
     market = "KRW-BTC"
     data = []
     max_workers = 5  # 적절한 스레드 수 설정 . 일반적으로 I/O 바운드 작업에서는 5~10개의 스레드가 적절한 성능을 제공한다고 함. 실험을 통해 적절히 조절가능
-    batch_size = 5
+    batch_size = 5  # 초당 5회 제한때문에 설정했는데 속도를 올리기위해 추후 조정
     print(
         f"Fetching data from {start_date} to {end_date}"
     )  # 데이터 가져오는 범위 로그 추가
@@ -141,7 +130,7 @@ def fetch_data(start_date, end_date):
                 futures.append((current_date, future))
                 current_date += timedelta(minutes=60 * 200)
                 time.sleep(0.2)
-                # 스레드 개수 및 작업 대기열 상태 출력
+                # 현재 작업중인 스레드 개수 및 작업 대기열 상태 출력
             print(f"Current active threads: {len(executor._threads)}")
             print(f"Tasks in queue: {executor._work_queue.qsize()}")
 
@@ -150,9 +139,6 @@ def fetch_data(start_date, end_date):
                 try:
                     result = future.result()
                     if result:
-                        # print(
-                        #     f"Data fetched for future with result: {result}"
-                        # )  # URL과 함께 결과 로그 추가
                         print(
                             f"Data fetched for date {current_date}: {len(result)} records"
                         )
@@ -165,15 +151,12 @@ def fetch_data(start_date, end_date):
 
     # 중복제거 전 개수
     print(f"Total records fetched before removing duplicates: {len(data)}")
-    # 데이터 정렬 및 중복 제거 시간 측정
-    # start_sort_time = time.time()
+
+    # 데이터 정렬 및 중복 제거 시간 측정. set을 이용한 중복제거보다 메모리 부담이 덜하다
     unique_data = {entry["candle_date_time_kst"]: entry for entry in data}
     data = list(unique_data.values())
-    # sorted_data = sorted(unique_data.values(), key=lambda x: x["candle_date_time_kst"])
 
-    # end_sort_time = time.time()
-    # sort_duration = end_sort_time - start_sort_time
-    # print(f"Data sorting took {sort_duration} seconds")
+    # 중복 후 개수
     print(f"Total records after removing duplicates: {len(data)}")
 
     return data
@@ -360,6 +343,3 @@ def collect_and_load_data():
         end_time = time.time()  # 종료 시간 기록
         elapsed_time = end_time - start_time
         print(f"Elapsed time for data load: {elapsed_time} seconds")
-
-
-# collect_and_load_data()
