@@ -1,21 +1,26 @@
-from queue import Queue
 from concurrent.futures import ThreadPoolExecutor
-from sqlalchemy import create_engine, Column, DateTime, Float, MetaData, func, inspect
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from dags.module.info.connections import Connections
+from dags.module.info.api import APIInformation
+from sqlalchemy import (
+    create_engine,
+    Column,
+    DateTime,
+    Float,
+    MetaData,
+    func,
+    inspect,
+    Index,
+)
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta
-import os
+from typing import Optional, Tuple, Dict, List
+
 import requests
 import time
 import jwt
 import uuid
-import threading
-
-# 환경변수로 불러오는게  안돼서 하드코딩해서 테스트중(키는 따로저장)
-
-
-if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
-    raise ValueError("Upbit API keys are not set in the environment variables.")
 
 # SQLAlchemy의 기본 클래스를 선언합니다.
 Base = declarative_base()
@@ -30,26 +35,31 @@ class BtcOhlc(Base):
     low = Column(Float)
     close = Column(Float)
     volume = Column(Float)
+    __table_args__ = (Index("idx_btc_ohlc_time", "time"),)
 
 
 # PostgreSQL 연결 정보를 환경 변수에서 가져옵니다.
-postgres_conn_str = os.environ.get("AIRFLOW__CORE__SQL_ALCHEMY_CONN")
-# print(postgres_conn_str)
-if not postgres_conn_str:
+postgres_hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
+upbit_access_key = APIInformation.UPBIT_ACCESS_KEY.value
+upbit_secret_key = APIInformation.UPBIT_ACCESS_KEY.value
+if not postgres_hook:
     raise ValueError(
         "Postgres connection string is not set in the environment variables."
     )
+if not upbit_access_key or not upbit_secret_key:
+    raise ValueError("Upbit API keys are not set in the environment variables.")
 
 # 데이터베이스 연결 엔진을 생성합니다.
-engine = create_engine(postgres_conn_str)
+engine = create_engine(postgres_hook.get_uri())
 
-# 데이터베이스 세션을 생성합니다.
 
-session = Session(bind=engine)
+# 데이터베이스 세션을 생성하는 함수
+def get_db_session() -> Session:
+    return Session(bind=engine)
 
 
 # JWT 생성 함수
-def generate_jwt_token(access_key: str, secret_key: str):
+def generate_jwt_token(access_key: str, secret_key: str) -> str:
     payload = {"access_key": access_key, "nonce": str(uuid.uuid4())}
     jwt_token = jwt.encode(payload, secret_key, algorithm="HS256")
     authorization_token = f"Bearer {jwt_token}"
@@ -57,7 +67,9 @@ def generate_jwt_token(access_key: str, secret_key: str):
 
 
 # 남아있는 요청 수를 확인하고 대기 시간을 조절하는 함수.
-def check_remaining_requests(headers: dict):
+def check_remaining_requests(
+    headers: Dict[str, str]
+) -> Tuple[Optional[int], Optional[int]]:
     remaining_req = headers.get("Remaining-Req")
     if remaining_req:
         group, min_req, sec_req = remaining_req.split("; ")
@@ -68,11 +80,11 @@ def check_remaining_requests(headers: dict):
 
 
 # 동기적으로 Upbit API를 사용하여 비트코인 시세 데이터를 가져오는 함수를 정의합니다.
-def fetch_ohlcv_data(market: str, to: str, count: int):
+def fetch_ohlcv_data(market: str, to: str, count: int) -> Optional[List[Dict]]:
     url = f"https://api.upbit.com/v1/candles/minutes/60?market={market}&to={to}&count={count}"
     headers = {
         "Accept": "application/json",
-        "Authorization": generate_jwt_token(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY),
+        "Authorization": generate_jwt_token(upbit_access_key, upbit_secret_key),
     }
     print(f"Calling API with URL: {url}")  # API 호출 URL 로그 출력
     backoff_time = 1
@@ -105,7 +117,7 @@ def fetch_ohlcv_data(market: str, to: str, count: int):
 
 
 # 동기적으로 1년치 데이터를 여러 번 요청하여 가져오는 함수
-def fetch_data(start_date: datetime, end_date: datetime):
+def fetch_data(start_date: datetime, end_date: datetime) -> List[Dict]:
     market = "KRW-BTC"
     data = []
     max_workers = 5  # 적절한 스레드 수 설정 . 일반적으로 I/O 바운드 작업에서는 5~10개의 스레드가 적절한 성능을 제공한다고 함. 실험을 통해 적절히 조절가능
@@ -149,21 +161,108 @@ def fetch_data(start_date: datetime, end_date: datetime):
                     print(f"Exception occurred while fetching data: {e}")
             data.extend(results)
 
-    # 중복제거 전 개수
-    print(f"Total records fetched before removing duplicates: {len(data)}")
-
-    # 데이터 정렬 및 중복 제거 시간 측정. set을 이용한 중복제거보다 메모리 부담이 덜하다
-    unique_data = {entry["candle_date_time_kst"]: entry for entry in data}
-    data = list(unique_data.values())
-
-    # 중복 후 개수
-    print(f"Total records after removing duplicates: {len(data)}")
-
     return data
 
 
+def process_data(
+    data: List[Dict], start_date: datetime, end_date: datetime, session: Session
+) -> None:
+    # 중복 제거
+    # 중복제거 전 개수
+    print(f"Total records fetched before removing duplicates: {len(data)}")
+    unique_data = {entry["candle_date_time_kst"]: entry for entry in data}
+    data = list(unique_data.values())
+    print(f"Total records after removing duplicates: {len(data)}")
+
+    # 데이터를 시간 순서로 정렬
+    data.sort(key=lambda x: x["candle_date_time_kst"])
+    print(f"Data sorted by time in ascending order.")
+
+    # 데이터 삽입
+    records = []
+    for item in data:
+        try:
+            time_value = datetime.strptime(
+                item["candle_date_time_kst"], "%Y-%m-%dT%H:%M:%S"
+            )
+            existing_record = (
+                session.query(BtcOhlc).filter(BtcOhlc.time == time_value).first()
+            )
+            if existing_record:
+                # print(f"Existing record found: {existing_record}")
+                continue
+
+            new_record = BtcOhlc(
+                time=time_value,
+                open=item["opening_price"],
+                high=item["high_price"],
+                low=item["low_price"],
+                close=item["trade_price"],
+                volume=item["candle_acc_trade_volume"],
+            )
+            records.append(new_record)
+        except Exception as e:
+            print(f"Error inserting record: {e}, data: {item}")
+
+    # 일정 데이터 개수 이상일 때만 bulk insert 사용
+    if len(records) >= 100:
+        session.bulk_insert_mappings(BtcOhlc, [record.__dict__ for record in records])
+        session.commit()
+        print(
+            f"{len(records)} records inserted successfully using bulk_insert_mappings."
+        )
+    else:
+        for record in records:
+            session.add(record)
+        session.commit()
+        print(f"{len(records)} records inserted successfully using session.add().")
+
+    # 누락된 시간 확인 및 채우기
+    print("Checking for missing times...")
+    missing_times_query = """
+        WITH missing_times AS (
+            SELECT time::timestamp
+            FROM generate_series(:start_time, :end_time, interval '1 hour') AS time
+            WHERE date_trunc('hour', time::timestamp) NOT IN (
+                SELECT date_trunc('hour', time)
+                FROM btc_ohlc
+            )
+        )
+        INSERT INTO btc_ohlc (time, open, high, low, close, volume)
+        SELECT
+            mt.time,
+            (SELECT AVG(open) FROM btc_ohlc WHERE time BETWEEN mt.time - interval '1 hour' AND mt.time + interval '1 hour'),
+            (SELECT AVG(high) FROM btc_ohlc WHERE time BETWEEN mt.time - interval '1 hour' AND mt.time + interval '1 hour'),
+            (SELECT AVG(low) FROM btc_ohlc WHERE time BETWEEN mt.time - interval '1 hour' AND mt.time + interval '1 hour'),
+            (SELECT AVG(close) FROM btc_ohlc WHERE time BETWEEN mt.time - interval '1 hour' AND mt.time + interval '1 hour'),
+            (SELECT AVG(volume) FROM btc_ohlc WHERE time BETWEEN mt.time - interval '1 hour' AND mt.time + interval '1 hour')
+        FROM missing_times mt
+        RETURNING *
+    """
+    #  fetchall() 사용해서 CursorResult를 리스트로 변환
+    missing_times = session.execute(
+        missing_times_query, {"start_time": start_date, "end_time": end_date}
+    ).fetchall()
+    session.commit()
+    print(f"Inserted missing times: {len(missing_times)} entries")
+
+    # 로그 추가: 누락된 시간과 채워진 데이터
+    for row in missing_times:
+        print(
+            f"Missing time: {row.time}, Filled with: open={row.open}, high={row.high}, low={row.low}, close={row.close}, volume={row.volume}"
+        )
+
+    # 최종 데이터 정렬 및 조회
+    start_sort_time = time.time()
+    sorted_data = session.query(BtcOhlc).order_by(BtcOhlc.time.asc()).all()
+    end_sort_time = time.time()
+    sort_duration = end_sort_time - start_sort_time
+    print(f"Data sorting took {sort_duration} seconds")
+    print(f"Total sorted records after interpolation: {len(sorted_data)}")
+
+
 # 데이터를 수집하고 데이터베이스에 적재하는 함수
-def collect_and_load_data():
+def collect_and_load_data() -> None:
     start_time = time.time()  # 시작 시간 기록
     metadata = MetaData()
     inspector = inspect(
@@ -174,6 +273,7 @@ def collect_and_load_data():
         if not inspector.has_table("btc_ohlc"):
             Base.metadata.create_all(bind=engine)
             print("Table 'btc_ohlc' created.")  # 테이블 생성 로그 추가
+
     except IntegrityError:
         # 테이블이 이미 존재하는 경우 무시
         print("Table 'btc_ohlc' already exists.")
@@ -214,126 +314,8 @@ def collect_and_load_data():
             print(
                 f"Inserting {len(data)} records into the database."
             )  # 삽입할 데이터 수를 로그에 남김
-            # 중복 제거를 위한 데이터 삽입 쿼리
-            # insert_query = """
-            # INSERT INTO btc_ohlc (time, open, high, low, close, volume)
-            # SELECT * FROM (SELECT :time AS time, :open AS open, :high AS high, :low AS low, :close AS close, :volume AS volume) AS temp
-            # WHERE NOT EXISTS (
-            #     SELECT 1 FROM btc_ohlc WHERE time = temp.time
-            # );
-            # """
-            records = []
-            for item in data:
-                try:
-                    time_value = datetime.strptime(
-                        item["candle_date_time_kst"], "%Y-%m-%dT%H:%M:%S"
-                    )
-                    existing_record = (
-                        session.query(BtcOhlc)
-                        .filter(BtcOhlc.time == time_value)
-                        .first()
-                    )
-                    # print(f"Checking for existing record at time: {time_value}")
-                    if existing_record:
-                        print(f"Existing record found: {existing_record}")
-                        continue
-
-                    new_record = BtcOhlc(
-                        time=time_value,
-                        open=item["opening_price"],
-                        high=item["high_price"],
-                        low=item["low_price"],
-                        close=item["trade_price"],
-                        volume=item["candle_acc_trade_volume"],
-                    )
-                    records.append(new_record)
-
-                except Exception as e:
-                    print(f"Error inserting record: {e}, data: {item}")
-            # 일정 데이터 개수 이상일 때만 bulk insert 사용
-            if len(records) >= 100:
-                session.bulk_insert_mappings(
-                    BtcOhlc, [record.__dict__ for record in records]
-                )
-                session.commit()
-                print(
-                    f"{len(records)} records inserted successfully using bulk_insert_mappings."
-                )
-            else:
-                for record in records:
-                    session.add(record)
-                session.commit()
-                print(
-                    f"{len(records)} records inserted successfully using session.add()."
-                )
-
-            new_data_count = session.query(BtcOhlc).count()
-            print(f"Total records in the database after insertion: {new_data_count}")
-        #  31312
-        else:
-            print("No data retrieved.")
-
-        # 누락된 시간 확인
-        print("Checking for missing times...")
-        result = session.execute(
-            """
-            SELECT time::timestamp
-            FROM generate_series(:start_time, :end_time, interval '1 hour') AS time
-            WHERE date_trunc('hour', time::timestamp) NOT IN (SELECT date_trunc('hour', time) FROM btc_ohlc)
-            """,
-            {"start_time": start_date, "end_time": end_date},
-        )
-
-        missing_times = []
-        for row in result:
-            missing_time = row[0]
-            missing_times.append(missing_time)
-            print(f"Missing time detected: {missing_time}")
-
-            # 누락된 데이터에 대해서는 앞,뒤의 데이터 합의 평균을 사용해서 처리함.
-            # 가장 가까운 이전 데이터
-            prev_data = (
-                session.query(BtcOhlc)
-                .filter(BtcOhlc.time < missing_time)
-                .order_by(BtcOhlc.time.desc())
-                .first()
-            )
-            # 가장 가까운 이후 데이터
-            next_data = (
-                session.query(BtcOhlc)
-                .filter(BtcOhlc.time > missing_time)
-                .order_by(BtcOhlc.time.asc())
-                .first()
-            )
-
-            if prev_data and next_data:
-                new_record = BtcOhlc(
-                    time=missing_time,
-                    open=(prev_data.open + next_data.open) / 2,
-                    high=(prev_data.high + next_data.high) / 2,
-                    low=(prev_data.low + next_data.low) / 2,
-                    close=(prev_data.close + next_data.close) / 2,
-                    volume=(prev_data.volume + next_data.volume) / 2,
-                )
-                session.add(new_record)
-                print(
-                    f"Interpolated data for {missing_time}: open={new_record.open}, high={new_record.high}, low={new_record.low}, close={new_record.close}, volume={new_record.volume}"
-                )
-
-        if missing_times:
-            session.commit()
-            print(f"Missing times: {len(missing_times)} entries")
-            print(f"Inserted interpolated records for missing times.")
-        else:
-            print("No missing times detected.")
-
-        # 정렬된 데이터 다시 조회 및 시간측정
-        start_sort_time = time.time()
-        sorted_data = session.query(BtcOhlc).order_by(BtcOhlc.time).all()
-        end_sort_time = time.time()
-        sort_duration = end_sort_time - start_sort_time
-        print(f"Data sorting took {sort_duration} seconds")
-        print(f"Total sorted records after interpolation: {len(sorted_data)}")
+            session = get_db_session()
+            process_data(data, start_date, end_date, session)
 
     except Exception as e:
         print(f"An error occurred: {e}")
