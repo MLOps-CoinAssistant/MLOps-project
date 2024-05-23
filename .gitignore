@@ -2,8 +2,8 @@
 .env
 .DS_Store
 airflow_settings.yaml
-compose.yaml
-mlflow-compose.yaml
+# compose.yaml
+# mlflow-compose.yaml
 __pycache__/
 astro
 .venv
