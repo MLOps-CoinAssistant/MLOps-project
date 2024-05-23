@@ -25,6 +25,7 @@ def api_pipeline():
         task_id="collect_and_load_data",
         python_callable=collect_and_load_data,
     )
+
     end_task = EmptyOperator(task_id="end_task")
 
     # 작업 순서를 정의합니다.
