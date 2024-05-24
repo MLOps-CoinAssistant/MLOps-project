@@ -421,6 +421,9 @@ async def insert_data_into_db(fetch_data):
                 "Even after fetching, data timestamps are not continuous in 1-hour intervals."
             )
 
+    # 데이터베이스에 삽입하기 전에 fetch_data를 정렬한다.
+    fetch_data.sort(key=lambda x: x["candle_date_time_kst"])
+
     session = SessionLocal()
     try:
         for entry in fetch_data:
