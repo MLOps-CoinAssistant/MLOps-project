@@ -2,7 +2,7 @@ import asyncio
 import uvloop
 import aiohttp
 from datetime import datetime, timedelta
-from sqlalchemy import create_engine, Column, DateTime, Integer, MetaData, Table
+from sqlalchemy import create_engine, Column, DateTime, Integer, MetaData, Table, Index
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 import logging
@@ -43,6 +43,7 @@ class BtcOhlcv(Base):
     low = Column(Integer, nullable=True)
     close = Column(Integer, nullable=True)
     volume = Column(Integer, nullable=True)
+    __table_args__ = (Index("idx_btc_ohlcv_time", "time"),)
 
 
 total_execution_time = 0
@@ -52,6 +53,7 @@ def create_table_if_not_exists():
     """
     데이터베이스에 필요한 테이블이 존재하지 않으면 생성하는 함수
     """
+
     postgres_hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
     engine = create_engine(postgres_hook.get_uri())
     Base.metadata.create_all(engine)
@@ -62,6 +64,7 @@ def create_table_if_not_exists():
     # metadata: 데이터베이스 테이블을 정의하는 클래스의 메타데이터를 저장하는 객체
     # metadata.create_all(engine): 데이터베이스에 필요한 테이블이 존재하지 않으면 생성
     # engine: 데이터베이스 연결을 관리하는 객체
+    logger.info("Checked and created tables if not existing.")
 
 
 def generate_jwt_token(access_key: str, secret_key: str) -> str:
@@ -207,9 +210,15 @@ async def fetch_ohlcv_data(session, market: str, to: str, count: int, retry=3):
                 else:
                     logger.error(f"Unexpected response format: {data}")
         except aiohttp.ClientError as e:
-            logger.error(f"API request failed: {e}")
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60)  # Exponential backoff
+            if response.status == 429:
+                logger.warning(
+                    f"API request failed: {e}, retrying in {backoff} seconds..."
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)  # Exponential backoff
+            else:
+                logger.error(f"API request failed: {e}")
+                break
     return []
 
 
