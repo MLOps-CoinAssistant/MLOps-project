@@ -145,9 +145,9 @@ def fetch_data(
                     current_date += timedelta(minutes=60 * 200)
                     continue
 
-                to_date = (current_date + timedelta(minutes=60 * 199)).strftime(
-                    "%Y-%m-%dT%H:%M:%S"
-                )
+                to_date = min(
+                    current_date + timedelta(minutes=60 * 199), end_date
+                ).strftime("%Y-%m-%dT%H:%M:%S")
                 future = executor.submit(fetch_ohlcv_data, market, to_date, 200)
                 print(f"Scheduled fetch for date: {current_date}")
                 futures.append((current_date, future))
@@ -185,7 +185,7 @@ def check_and_remove_duplicates(session: Session) -> None:
         HAVING COUNT(time) > 1
     """
     duplicates = session.execute(duplicate_check_query).fetchall()
-
+    print("1111")
     if duplicates:
         print(f"Found duplicates: {duplicates}")
         # 중복된 시간에 대해 첫 번째 행만 남기고 나머지를 제거
@@ -208,6 +208,12 @@ def check_and_remove_duplicates(session: Session) -> None:
         session.execute(delete_stmt)
         session.commit()
         print("Duplicates removed")
+        # 중복이 제거된 후에 중복이 여전히 존재하는지 확인하는 로그 추가
+        remaining_duplicates = session.execute(duplicate_check_query).fetchall()
+        if remaining_duplicates:
+            print(f"Remaining duplicates after removal: {remaining_duplicates}")
+        else:
+            print("No duplicates found after removal")
     else:
         print("No duplicates found")
 
@@ -310,10 +316,12 @@ def check_and_interpolate_missing_values(
 
 
 def check_and_sort_data(session: Session) -> None:
+    """
+    데이터를 정렬하는 함수. 결측치 보간 후 정렬을 위해 사용.
+    """
     sort_check_query = """
         SELECT time
         FROM btc_ohlc
-        ORDER BY time
     """
     result = session.execute(sort_check_query).fetchall()
 
@@ -368,6 +376,7 @@ def process_data(
     session: Session,
     initial_load: bool,
 ) -> None:
+    """ """
 
     records = []
     for item in data:
@@ -389,54 +398,39 @@ def process_data(
 
     # 데이터가 있는지 확인
     if records:
-        time_values = [record.time for record in records]
-        existing_times = (
-            session.query(BtcOhlc.time).filter(BtcOhlc.time.in_(time_values)).all()
-        )
-        existing_times = {time[0] for time in existing_times}
 
-        if existing_times:
-            print(f"Found existing times in session: {existing_times}")
-
-    # 중복 제거 ( 데이터 삽입 전에 중복을 제거하지 않으면 키 에러 발생함)
-    check_and_remove_duplicates(session)
-
-    # 데이터를 먼저 삽입
-    if initial_load:
-        session.bulk_insert_mappings(BtcOhlc, [record.__dict__ for record in records])
-        session.commit()
-        print(
-            f"{len(records)} records inserted successfully using bulk_insert_mappings."
-        )
-    else:
-        for record in records:
-            stmt = pg_insert(BtcOhlc).values(
-                time=record.time,
-                open=record.open,
-                high=record.high,
-                low=record.low,
-                close=record.close,
-                volume=record.volume,
+        # 1년치 데이터를 먼저 삽입
+        if initial_load:
+            session.bulk_insert_mappings(
+                BtcOhlc, [record.__dict__ for record in records]
             )
-            upsert_stmt = stmt.on_conflict_do_update(
-                index_elements=["time"],
-                set_={
-                    "open": stmt.excluded.open,
-                    "high": stmt.excluded.high,
-                    "low": stmt.excluded.low,
-                    "close": stmt.excluded.close,
-                    "volume": stmt.excluded.volume,
-                },
+            session.commit()
+            print(
+                f"{len(records)} records inserted successfully using bulk_insert_mappings."
             )
-            session.execute(upsert_stmt)
-        session.commit()
-        print(f"{len(records)} records inserted successfully using session.add().")
-
-    # 누락된 시간 확인 및 채우기(데이터 자체 시간이 KST로 되어있음)
-    # btc_ohlc 에 존재하지 않는 시간을 찾는 쿼리
-
-    # 데이터 정렬
-    check_and_sort_data(session)
+        else:
+            for record in records:
+                stmt = pg_insert(BtcOhlc).values(
+                    time=record.time,
+                    open=record.open,
+                    high=record.high,
+                    low=record.low,
+                    close=record.close,
+                    volume=record.volume,
+                )
+                upsert_stmt = stmt.on_conflict_do_update(
+                    index_elements=["time"],
+                    set_={
+                        "open": stmt.excluded.open,
+                        "high": stmt.excluded.high,
+                        "low": stmt.excluded.low,
+                        "close": stmt.excluded.close,
+                        "volume": stmt.excluded.volume,
+                    },
+                )
+                session.execute(upsert_stmt)
+            session.commit()
+            print(f"{len(records)} records inserted successfully using session.add().")
 
     # 결측치 보간
     check_and_interpolate_missing_values(session, start_date, end_date)
@@ -483,15 +477,19 @@ def collect_and_load_data() -> None:
         # KST 시간을 UTC 시간으로 변환
         if last_loaded_time:
             last_loaded_time = last_loaded_time - timedelta(hours=9)
-            last_loaded_time = last_loaded_time.replace(tzinfo=timezone.utc)
 
         # 디버그: last_loaded_time과 end_date 출력
         print(f"last loaded time: {last_loaded_time}")
         print(f"end date: {end_date}")
 
-        # 최근 로드된 시간이 존재하고 동시에 그 시간이 현재시간보다 과거일 때 최근 데이터 1개만 호출
-        if last_loaded_time and last_loaded_time < end_date:
-            print("load first. fetch 365days data")
+        # 아직 1시간이 지나지 않았을 때 요청이 들어오면 작업 종료.
+        # ex) 1시30분경에 요청이 들어온다면, 이미 1시에 데이터가 들어오는 작업이 진행됐으므로 2시가 되기 전까지는 이 태스크 실행이 의미가 없음
+        if last_loaded_time:
+            if last_loaded_time.replace(
+                minute=0, second=0, microsecond=0
+            ) == end_date.replace(minute=0, second=0, microsecond=0):
+                return
+            print("load not first. fetch 1 hour data")
             start_date = last_loaded_time + timedelta(hours=1)
             to_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
             data = fetch_ohlcv_data("KRW-BTC", to_date, 1)
@@ -499,10 +497,14 @@ def collect_and_load_data() -> None:
 
         # 그 외에는 최초삽입에 해당하므로 1년치 데이터 호출
         else:
-            print("load not first. fetch 1 hour data")
+            print("load first. fetch 365days data")
             start_date = end_date - timedelta(days=365)
             existing_times = set(time[0] for time in session.query(BtcOhlc.time).all())
             data = fetch_data(start_date, end_date, existing_times)
+            # 중복 제거(check_and_remove_duplicates 함수는 sqlalchemy orm으로 작성되어서 테이블에 데이터가 존재하지 않을 시 중복제거 작업이 불가능)
+            # 해쉬테이블을 이용해 제거
+            unique_data = {entry["candle_date_time_kst"]: entry for entry in data}
+            data = list(unique_data.values())
             initial_load = True
 
         # 세션 내 데이터 확인
