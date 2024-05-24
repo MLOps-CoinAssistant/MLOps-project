@@ -55,6 +55,13 @@ def create_table_if_not_exists():
     postgres_hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
     engine = create_engine(postgres_hook.get_uri())
     Base.metadata.create_all(engine)
+    # create_table_if_not_exists 설명
+    # 데이터베이스에 필요한 테이블이 존재하지 않으면 생성하는 함수
+    # Base.metadata.create_all(engine): 데이터베이스에 필요한 테이블이 존재하지 않으면 생성하는 함수
+    # Base: declarative_base()로 생성된 객체로서, 데이터베이스 테이블을 정의하는 클래스의 부모 클래스이다.
+    # metadata: 데이터베이스 테이블을 정의하는 클래스의 메타데이터를 저장하는 객체
+    # metadata.create_all(engine): 데이터베이스에 필요한 테이블이 존재하지 않으면 생성
+    # engine: 데이터베이스 연결을 관리하는 객체
 
 
 def generate_jwt_token(access_key: str, secret_key: str) -> str:
@@ -72,6 +79,18 @@ def generate_jwt_token(access_key: str, secret_key: str) -> str:
     jwt_token = jwt.encode(payload, secret_key, algorithm="HS256")
     authorization_token = f"Bearer {jwt_token}"
     return authorization_token
+
+
+# generate_jwt_token 설명
+# Upbit API 호출을 위한 JWT 토큰을 생성하는 함수
+# JWT 토큰이 필요한 이유: Upbit API를 호출할 때, 인증을 위해 JWT 토큰을 사용한다.
+# JWT란 JSON Web Token의 약자로, JSON 객체를 URL 안전 문자열로 변환한 토큰이다.
+# JWT 토큰은 헤더, 페이로드, 서명 세 부분으로 구성되어 있다.
+# 헤더: JWT 토큰의 유형과 해싱 알고리즘을 지정한다.
+# 페이로드: JWT 토큰에 포함되는 클레임(claim) 정보를 담고 있다.
+# 서명: 헤더와 페이로드를 인코딩한 후, 비밀 키를 이용하여 서명을 생성한다.
+# payload: JWT 토큰의 페이로드 부분으로, 액세스 키와 랜덤한 UUID를 포함한다.
+# jwt_token: jwt.encode(payload, secret_key, algorithm="HS256") 함수를 이용하여 JWT 토큰을 생성한다.
 
 
 def time_execution(func):
@@ -126,6 +145,33 @@ async def fetch_upbit_data_fill_gaps(session, last_recorded_time):
 
     all_data.sort(key=lambda x: x["candle_date_time_kst"])
     return all_data
+
+
+# fetch_upbit_data_fill_gaps 설명
+# 데이터베이스에 기록된 마지막 시간 이후의 데이터를 Upbit API로부터 가져오는 함수
+
+
+async def delete_old_data():
+    """
+    현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
+    """
+    postgres_hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
+    engine = create_engine(postgres_hook.get_uri())
+    SessionLocal = sessionmaker(bind=engine)
+
+    session = SessionLocal()
+    try:
+        threshold_date = datetime.utcnow() + timedelta(hours=9) - timedelta(days=365)
+        deleted_rows = (
+            session.query(BtcOhlcv).filter(BtcOhlcv.time < threshold_date).delete()
+        )
+        session.commit()
+        logger.info(f"Deleted {deleted_rows} old records from the database.")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Failed to delete old data: {e}")
+    finally:
+        session.close()
 
 
 @time_execution
@@ -437,7 +483,7 @@ def fetch_data_for_period_sync(start_date_str, end_date_str):
 
 async def collect_and_load_data():
     """
-    데이터를 수집하고 데이터베이스에 적재하는 함수
+    데이터를 수집하고 데이터베이스에 적재하며, 365일이 지난 데이터를 삭제하는 함수
     """
     global total_execution_time
     create_table_if_not_exists()
@@ -476,6 +522,7 @@ async def collect_and_load_data():
                 data = [item for sublist in results for item in sublist]
 
         await insert_data_into_db(data)
+        await delete_old_data()
 
     logger.info(
         f"Total execution time for fetch_ohlcv_data: {total_execution_time:.2f} seconds"
