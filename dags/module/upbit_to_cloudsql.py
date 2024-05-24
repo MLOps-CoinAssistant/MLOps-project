@@ -12,6 +12,8 @@ from sqlalchemy import (
     inspect,
     Index,
     text,
+    delete,
+    select,
 )
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.exc import IntegrityError
@@ -75,7 +77,7 @@ def check_remaining_requests(
 ) -> Tuple[Optional[int], Optional[int]]:
     remaining_req = headers.get("Remaining-Req")
     if remaining_req:
-        group, min_req, sec_req = remaining_req.split("; ")
+        _, min_req, sec_req = remaining_req.split("; ")
         min_req = int(min_req.split("=")[1])
         sec_req = int(sec_req.split("=")[1])
         return min_req, sec_req
@@ -90,8 +92,8 @@ def fetch_ohlcv_data(market: str, to: str, count: int) -> Optional[List[Dict]]:
         "Authorization": generate_jwt_token(upbit_access_key, upbit_secret_key),
     }
     print(f"Calling API with URL: {url}")  # API 호출 URL 로그 출력
-    backoff_time = 1
-    max_backoff_time = 64  # 최대 대기 시간 설정 (64초). Ecponential Backoff방식 : 429에러 발생시 처음1초 대기 후 재시도하고, 이후에는 대기시간을 2배씩 늘려가면서 최대 64초까지 대기시킴.
+    backoff_time = 0.5
+    max_backoff_time = 32  # 최대 대기 시간 설정 (64초). Ecponential Backoff방식 : 429에러 발생시 처음1초 대기 후 재시도하고, 이후에는 대기시간을 2배씩 늘려가면서 최대 64초까지 대기시킴.
     max_retries = 5
     retry_count = 0
     while retry_count < max_retries:
@@ -101,7 +103,7 @@ def fetch_ohlcv_data(market: str, to: str, count: int) -> Optional[List[Dict]]:
             min_req, sec_req = check_remaining_requests(response.headers)
             if min_req is not None and sec_req is not None and sec_req < 5:
                 print(f"Rate limit close to being exceeded. Waiting for 1 second...")
-                time.sleep(1)
+                time.sleep(0.5)
             return data
         elif response.status_code == 429:
             print(
@@ -171,43 +173,204 @@ def fetch_data(
     return data
 
 
+def check_and_remove_duplicates(session: Session) -> None:
+    """
+    중복이 있는지 체크하고, 있다면 중복을 제거합니다.
+
+    """
+    duplicate_check_query = """
+        SELECT time
+        FROM btc_ohlc
+        GROUP BY time
+        HAVING COUNT(time) > 1
+    """
+    duplicates = session.execute(duplicate_check_query).fetchall()
+
+    if duplicates:
+        print(f"Found duplicates: {duplicates}")
+        # 중복된 시간에 대해 첫 번째 행만 남기고 나머지를 제거
+        # ranked_ohlc : row_number 윈도우 함수를 통해 각 time값에 대해 행 번호를 매김
+        # delete_stmt : ctid(postgresql에서 제공하는 시스템 컬럼) 를 사용하여 row_num > 1 보다 큰 행들을 삭제한다. 결론적으로 time 값에 대해 첫 번째 행만 남기고 삭제
+        ranked_ohlc = select(
+            BtcOhlc.time,
+            BtcOhlc.ctid,
+            func.row_number()
+            .over(partition_by=BtcOhlc.time, order_by=BtcOhlc.time)
+            .label("row_num"),
+        ).subquery()
+
+        delete_stmt = delete(BtcOhlc).where(
+            BtcOhlc.ctid.in_(
+                select([ranked_ohlc.c.ctid]).where(ranked_ohlc.c.row_num > 1)
+            )
+        )
+
+        session.execute(delete_stmt)
+        session.commit()
+        print("Duplicates removed")
+    else:
+        print("No duplicates found")
+
+
+def check_and_interpolate_missing_values(
+    session: Session, start_date: datetime, end_date: datetime
+) -> None:
+    """
+    결측치를 확인 후 존재하는 데이터에 대해 linear 보간법을 적용하여 삽입합니다.
+    """
+
+    missing_times_query = """
+        WITH all_times AS (
+            SELECT generate_series(
+                :start_time,
+                :end_time,
+                interval '1 hour'
+            ) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul' AS time
+        )
+        SELECT time FROM all_times
+        WHERE date_trunc('hour', time) NOT IN (
+            SELECT date_trunc('hour', time)
+            FROM btc_ohlc
+        )
+    """
+    missing_times = session.execute(
+        missing_times_query, {"start_time": start_date, "end_time": end_date}
+    ).fetchall()
+    missing_times = [mt[0] for mt in missing_times]
+
+    if missing_times:
+        existing_data = session.query(BtcOhlc).order_by(BtcOhlc.time).all()
+        df_existing = pd.DataFrame(
+            [(d.time, d.open, d.high, d.low, d.close, d.volume) for d in existing_data],
+            columns=["time", "open", "high", "low", "close", "volume"],
+        )
+        df_existing.reset_index(drop=True, inplace=True)
+        df_existing["time"] = pd.to_datetime(df_existing["time"])
+
+        missing_times_corrected = [
+            mt.replace(minute=0, second=0, microsecond=0) for mt in missing_times
+        ]
+        df_missing = pd.DataFrame(missing_times_corrected, columns=["time"])
+        df_missing["open"] = np.nan
+        df_missing["high"] = np.nan
+        df_missing["low"] = np.nan
+        df_missing["close"] = np.nan
+        df_missing["volume"] = np.nan
+
+        df_missing = df_missing.astype(
+            {
+                "open": "float64",
+                "high": "float64",
+                "low": "float64",
+                "close": "float64",
+                "volume": "float64",
+            }
+        )
+
+        df_combined = pd.concat([df_existing, df_missing])
+        df_combined.sort_values("time", inplace=True)
+
+        df_combined.set_index("time", inplace=True)
+        df_combined.interpolate(method="linear", inplace=True)
+
+        df_combined["open"] = df_combined["open"].round(0).astype(float)
+        df_combined["high"] = df_combined["high"].round(0).astype(float)
+        df_combined["low"] = df_combined["low"].round(0).astype(float)
+        df_combined["close"] = df_combined["close"].round(0).astype(float)
+
+        df_combined.reset_index(inplace=True)
+
+        interpolated_df = df_combined.loc[
+            df_combined["time"].isin(missing_times_corrected)
+        ]
+        for index, row in interpolated_df.iterrows():
+            stmt = pg_insert(BtcOhlc).values(
+                time=row["time"],
+                open=row["open"],
+                high=row["high"],
+                low=row["low"],
+                close=row["close"],
+                volume=row["volume"],
+            )
+            upsert_stmt = stmt.on_conflict_do_update(
+                index_elements=["time"],
+                set_={
+                    "open": stmt.excluded.open,
+                    "high": stmt.excluded.high,
+                    "low": stmt.excluded.low,
+                    "close": stmt.excluded.close,
+                    "volume": stmt.excluded.volume,
+                },
+            )
+            session.execute(upsert_stmt)
+        session.commit()
+        print(f"{len(interpolated_df)} interpolated records inserted successfully.")
+    else:
+        print("No missing values found")
+
+
+def check_and_sort_data(session: Session) -> None:
+    sort_check_query = """
+        SELECT time
+        FROM btc_ohlc
+        ORDER BY time
+    """
+    result = session.execute(sort_check_query).fetchall()
+
+    if result:
+        # 첫 10개 행과 마지막 10개 행을 출력
+        first = result[:10]
+        last = result[-10:]
+        print(f"First 10 times: {first}")
+        print(f"Last 10 times: {last}")
+
+    # 정렬이 필요한지 확인
+    is_sorted = result == sorted(result)
+
+    if not is_sorted:
+        print("Sorting required. Proceeding with sort.")
+        sort_query = text(
+            """
+            CREATE TEMP TABLE sorted_btc_ohlc AS
+            SELECT * FROM btc_ohlc
+            ORDER BY time;
+
+            DELETE FROM btc_ohlc;
+
+            INSERT INTO btc_ohlc
+            SELECT * FROM sorted_btc_ohlc;
+
+            DROP TABLE sorted_btc_ohlc;
+        """
+        )
+        session.execute(sort_query)
+        session.commit()
+
+        # 정렬 후 데이터 다시 확인
+        result_after_sort = session.execute(sort_check_query).fetchall()
+        if result_after_sort:
+            first_10_after_sort = result_after_sort[:10]
+            last_10_after_sort = result_after_sort[-10:]
+            print(f"First 10 times after sort: {first_10_after_sort}")
+            print(f"Last 10 times after sort: {last_10_after_sort}")
+        else:
+            print("No data found after sorting")
+
+        print("Data sorted")
+    else:
+        print("Data already sorted")
+
+
 def process_data(
-    data: List[Dict], start_date: datetime, end_date: datetime, session: Session
+    data: List[Dict],
+    start_date: datetime,
+    end_date: datetime,
+    session: Session,
+    initial_load: bool,
 ) -> None:
 
-    print(f"Total records fetched before removing duplicates: {len(data)}")
-
-    # 중복 제거 전 데이터 확인
-    if len(data) >= 200:
-        print("Records from index 191 to 200 before processing:")
-        for record in data[190:200]:  # 인덱스가 0부터 시작하므로 190부터 199까지
-            print(record)
-
-    # 최초 1년치 데이터 요청에서 40개의 데이터를 제거
-    if len(data) > 8760:
-        data = data[:8760]
-        print(f"Trimmed data to 8760 records.")
-
-    # 중복 제거
-    unique_data = {entry["candle_date_time_kst"]: entry for entry in data}
-    data = list(unique_data.values())
-    print(f"Total records after removing duplicates: {len(data)}")
-
-    # 데이터를 시간 순서로 정렬
-    data.sort(key=lambda x: x["candle_date_time_kst"])
-    print(f"Data sorted by time in ascending order.")
-
-    # 기존 데이터 확인
-    existing_times = set(time[0] for time in session.query(BtcOhlc.time).all())
-    new_records = [
-        item
-        for item in data
-        if datetime.strptime(item["candle_date_time_kst"], "%Y-%m-%dT%H:%M:%S")
-        not in existing_times
-    ]
-
     records = []
-    for item in new_records:
+    for item in data:
         try:
             time_value = datetime.strptime(
                 item["candle_date_time_kst"], "%Y-%m-%dT%H:%M:%S"
@@ -224,8 +387,22 @@ def process_data(
         except Exception as e:
             print(f"Error preparing record: {e}, data: {item}")
 
+    # 데이터가 있는지 확인
+    if records:
+        time_values = [record.time for record in records]
+        existing_times = (
+            session.query(BtcOhlc.time).filter(BtcOhlc.time.in_(time_values)).all()
+        )
+        existing_times = {time[0] for time in existing_times}
+
+        if existing_times:
+            print(f"Found existing times in session: {existing_times}")
+
+    # 중복 제거 ( 데이터 삽입 전에 중복을 제거하지 않으면 키 에러 발생함)
+    check_and_remove_duplicates(session)
+
     # 데이터를 먼저 삽입
-    if session.query(BtcOhlc).count() == 0:
+    if initial_load:
         session.bulk_insert_mappings(BtcOhlc, [record.__dict__ for record in records])
         session.commit()
         print(
@@ -257,179 +434,15 @@ def process_data(
 
     # 누락된 시간 확인 및 채우기(데이터 자체 시간이 KST로 되어있음)
     # btc_ohlc 에 존재하지 않는 시간을 찾는 쿼리
-    print("Checking for missing times...")
-    missing_times_query = """
-        WITH all_times AS (
-            SELECT generate_series(
-                :start_time,
-                :end_time,
-                interval '1 hour'
-            ) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul' AS time
-        )
-        SELECT time FROM all_times
-        WHERE date_trunc('hour', time) NOT IN (
-            SELECT date_trunc('hour', time)
-            FROM btc_ohlc
-        )
-    """
-    #  fetchall() 사용해서 CursorResult를 리스트로 변환
-    missing_times = session.execute(
-        missing_times_query, {"start_time": start_date, "end_time": end_date}
-    ).fetchall()
 
-    # 누락된시간
-    missing_times = [mt[0] for mt in missing_times]
+    # 데이터 정렬
+    check_and_sort_data(session)
 
-    print(f"Missing times (KST): {missing_times}")
+    # 결측치 보간
+    check_and_interpolate_missing_values(session, start_date, end_date)
 
-    # 누락된 시간에 대한 로그 추가
-    print(f"Total missing times detected: {len(missing_times)}")
-
-    if missing_times:
-
-        sample_data = session.query(BtcOhlc).first()
-        print(f"Sample data from database: {sample_data}")
-        print(
-            f"Sample data attributes: time={sample_data.time}, type={type(sample_data.time)}, open={sample_data.open}, high={sample_data.high}, low={sample_data.low}, close={sample_data.close}, volume={sample_data.volume}"
-        )
-        if sample_data:
-            print(
-                f"Sample data attributes: time={sample_data.time}, open={sample_data.open}, high={sample_data.high}, low={sample_data.low}, close={sample_data.close}, volume={sample_data.volume}"
-            )
-
-        # 보간을 위한 데이터프레임 생성
-        existing_data = session.query(BtcOhlc).order_by(BtcOhlc.time).all()
-        # 디버그: 기존 데이터 출력
-        print(f"Existing data sample: {existing_data[:10]}")
-
-        df_existing = pd.DataFrame(
-            [(d.time, d.open, d.high, d.low, d.close, d.volume) for d in existing_data],
-            columns=["time", "open", "high", "low", "close", "volume"],
-        )
-        # 인덱스로 설정하지 않음
-        df_existing.reset_index(drop=True, inplace=True)
-        df_existing["time"] = pd.to_datetime(df_existing["time"])
-
-        # 누락된 시간에 대한 데이터프레임 생성
-        missing_times_corrected = [
-            mt.replace(minute=0, second=0, microsecond=0) for mt in missing_times
-        ]
-        df_missing = pd.DataFrame(missing_times_corrected, columns=["time"])
-        df_missing["open"] = np.nan
-        df_missing["high"] = np.nan
-        df_missing["low"] = np.nan
-        df_missing["close"] = np.nan
-        df_missing["volume"] = np.nan
-
-        # 데이터 타입 일치시키기
-        df_missing = df_missing.astype(
-            {
-                "open": "float64",
-                "high": "float64",
-                "low": "float64",
-                "close": "float64",
-                "volume": "float64",
-            }
-        )
-
-        # df_missing의 각 행을 하나씩 출력
-        print("Missing data rows:")
-        for index, row in df_missing.iterrows():
-            print(f"Index: {index}, Row: {row.to_dict()}")
-
-        # 인덱스 타입 확인을 위한 로그 추가
-        print(f"df_existing index type: {type(df_existing.index[0])}")
-        print(f"df_missing index type: {type(df_missing.index[0])}")
-
-        # 기존 데이터프레임과 누락된 시간 데이터프레임 결합
-        df_combined = pd.concat([df_existing, df_missing])
-        df_combined.sort_values("time", inplace=True)
-
-        # 디버그: 결합된 데이터프레임 출력
-        print(f"Combined DataFrame head:\n{df_combined.head(10)}")
-        print(f"Combined DataFrame tail:\n{df_combined.tail(10)}")
-        print(
-            f"Data before interpolation:\n{df_combined.head(10)}"
-        )  # 보간 전 데이터 일부 출력
-
-        # 데이터프레임을 다시 인덱스로 설정하여 보간
-        df_combined.set_index("time", inplace=True)
-
-        # 결측치 채우기 (선형 보간법 적용)
-        df_combined.interpolate(method="linear", inplace=True)
-
-        df_combined["open"] = df_combined["open"].round(0).astype(float)
-        df_combined["high"] = df_combined["high"].round(0).astype(float)
-        df_combined["low"] = df_combined["low"].round(0).astype(float)
-        df_combined["close"] = df_combined["close"].round(0).astype(float)
-
-        print(
-            f"Data after interpolation:\n{df_combined.head(10)}"
-        )  # 보간 후 데이터 일부 출력
-        print(
-            f"Data after interpolation (tail):\n{df_combined.tail(10)}"
-        )  # 보간 후 데이터 일부 출력
-
-        # 보간된 데이터 타입 확인
-        print(f"Interpolated DataFrame dtypes:\n{df_combined.dtypes}")
-        # 인덱스를 컬럼으로 다시 변환
-        df_combined.reset_index(inplace=True)
-
-        # 보간된 데이터를 데이터베이스에 삽입 (UPSERT) (UPSERT 란 INSERT ON CONFLICT DO UPDATE).
-        # 중복된 기본 키나 고유 제약 조건이 있는 레코드를 삽입할 때 충돌이 발생하면 기존 레코드를 업데이트하고,
-        # 그렇지 않으면 새로운 레코드를 삽입할 수 있도록 하기 위함입니다. 이를 통해 중복 키 오류를 방지할 수 있습니다.
-
-        # 보간된 데이터만 필터링
-        interpolated_df = df_combined.loc[
-            df_combined["time"].isin(missing_times_corrected)
-        ]
-        print(f"Interpolated DataFrame head:\n{interpolated_df.head(10)}")
-        print(f"Interpolated DataFrame tail:\n{interpolated_df.tail(10)}")
-
-        # 누락된 시간의 데이터만 데이터베이스에 삽입
-        for index, row in interpolated_df.iterrows():
-            # index 값을 문자열로 변환
-            time_value = row[
-                "time"
-            ].to_pydatetime()  # to_pydatetime()으로 datetime.datetime 객체로 변환
-            print(f"type time_value:{type(time_value)}")
-            query = f"""
-                INSERT INTO btc_ohlc (time, open, high, low, close, volume)
-                VALUES ('{time_value}', {row['open']}, {row['high']}, {row['low']}, {row['close']}, {row['volume']});
-            """
-            print(f"Executing query: {query}")
-            session.execute(query)
-        session.commit()
-        print(
-            f"{len(interpolated_df)} interpolated records inserted successfully using session.add()."
-        )
-
-        # 총 누락된 시간과 보간된 시간 개수 비교
-        total_missing_times = len(missing_times)
-        print(f"Total missing times: {total_missing_times}")
-        print(f"Interpolated records: {len(interpolated_df)}")
-
-        # 데이터 정렬 쿼리
-        sort_query = text(
-            """
-            CREATE TEMP TABLE sorted_btc_ohlc AS
-            SELECT * FROM btc_ohlc
-            ORDER BY time;
-
-            DELETE FROM btc_ohlc;
-
-            INSERT INTO btc_ohlc
-            SELECT * FROM sorted_btc_ohlc;
-
-            DROP TABLE sorted_btc_ohlc;
-        """
-        )
-
-        # 정렬 쿼리 실행
-        session.execute(sort_query)
-
-        # 최종 커밋
-        session.commit()
+    # 데이터 정렬
+    check_and_sort_data(session)
 
     # 최종 데이터 정렬 및 조회
     start_sort_time = time.time()
@@ -459,50 +472,54 @@ def collect_and_load_data() -> None:
         session.rollback()
 
     try:
-        end_date = datetime.now()  # 현재 시간을 종료 시간으로 설정
-        result = None  # 초기화
-
-        try:
-            # 데이터베이스에서 가장 최근 데이터의 시간을 가져옵니다.
-            result = session.query(func.max(BtcOhlc.time)).scalar()
-            print(f"Query result: {result}")  # 쿼리 결과를 로그에 남김
-        except Exception as query_exception:
-            print(f"Query exception occurred: {query_exception}")
-            # result가 None이 되도록 함으로써 이후 로직에서 올바르게 처리되도록 함
-            result = None
+        end_date = datetime.now()
+        result = session.query(func.max(BtcOhlc.time)).scalar()
         last_loaded_time = result
 
-        # 만약 최근 로드된 데이터 시간이 존재하면, 그 시간 이후로 데이터를 요청합니다.
-        # 그렇지 않으면, 기본적으로 1년 전부터 데이터를 요청합니다.
-        # KST = timezone(timedelta(hours=9))
-        end_date = datetime.now()
-        if last_loaded_time and last_loaded_time < end_date:
-            start_date = last_loaded_time + timedelta(
-                hours=1
-            )  # 최근 데이터 이후 1시간부터 시작
-        else:
-            start_date = end_date - timedelta(
-                days=365
-            )  # 데이터가 없거나 가장 최근 데이터가 현재 시간 이후인 경우
-            print(
-                "No recent data found or invalid last loaded time. Fetching data from one year ago."
-            )
+        # 디버그: last_loaded_time과 end_date 출력
+        print(f"last loaded time : {last_loaded_time} (type: {type(last_loaded_time)})")
+        print(f"end date : {end_date} (type: {type(end_date)})")
 
-        print(f"Fetching data from {start_date} to {end_date}")
-        existing_times = set(time[0] for time in session.query(BtcOhlc.time).all())
-        data = fetch_data(start_date, end_date, existing_times)
+        # KST 시간을 UTC 시간으로 변환
+        if last_loaded_time:
+            last_loaded_time = last_loaded_time - timedelta(hours=9)
+            last_loaded_time = last_loaded_time.replace(tzinfo=timezone.utc)
+
+        # 디버그: last_loaded_time과 end_date 출력
+        print(f"last loaded time: {last_loaded_time}")
+        print(f"end date: {end_date}")
+
+        # 최근 로드된 시간이 존재하고 동시에 그 시간이 현재시간보다 과거일 때 최근 데이터 1개만 호출
+        if last_loaded_time and last_loaded_time < end_date:
+            print("load first. fetch 365days data")
+            start_date = last_loaded_time + timedelta(hours=1)
+            to_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
+            data = fetch_ohlcv_data("KRW-BTC", to_date, 1)
+            initial_load = False
+
+        # 그 외에는 최초삽입에 해당하므로 1년치 데이터 호출
+        else:
+            print("load not first. fetch 1 hour data")
+            start_date = end_date - timedelta(days=365)
+            existing_times = set(time[0] for time in session.query(BtcOhlc.time).all())
+            data = fetch_data(start_date, end_date, existing_times)
+            initial_load = True
+
+        # 세션 내 데이터 확인
+        session_times = session.query(BtcOhlc.time).all()
+        print(f"Data in session before processing: {session_times}")
 
         if data:
-            print(
-                f"Inserting {len(data)} records into the database."
-            )  # 삽입할 데이터 수를 로그에 남김
-            process_data(data, start_date, end_date, session)
+            process_data(data, start_date, end_date, session, initial_load)
+            print("data processing finished")
+        else:
+            print("No data fetched")
 
     except Exception as e:
         print(f"An error occurred: {e}")
         session.rollback()
+
     finally:
         session.close()
-        end_time = time.time()  # 종료 시간 기록
-        elapsed_time = end_time - start_time
+        elapsed_time = time.time() - start_time
         print(f"Elapsed time for data load: {elapsed_time} seconds")
