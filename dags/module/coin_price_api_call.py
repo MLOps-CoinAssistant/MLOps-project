@@ -18,12 +18,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, List
 import numpy as np
 import pandas as pd
-from scipy.interpolate import interp1d
-from scipy.ndimage import gaussian_filter1d
 
 import requests
 import time

@@ -1,7 +1,7 @@
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from module.upbit_to_cloudsql import collect_and_load_data
+from module.coin_price_api_call import collect_and_load_data
 from datetime import datetime, timedelta
 
 
@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
     },  # 태스크 시간 제한 설정},
     tags=["upbit_to_cloudsql"],
 )
-def api_pipeline():
+def coin_price_api_pipeline():
     # 데이터 수집 및 적재 작업을 정의하고 Airflow DAG에 추가합니다.
     start_task = EmptyOperator(task_id="start_task")
     task_collect_and_load_data = PythonOperator(
@@ -33,4 +33,4 @@ def api_pipeline():
 
 
 # DAG를 생성합니다.
-api_pipeline()
+coin_price_api_pipeline()

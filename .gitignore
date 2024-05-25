@@ -13,3 +13,4 @@ compose.yaml
 mlflow-compose.yaml
 *.yaml
 *.yml
+.idea
