@@ -270,15 +270,15 @@ def check_and_interpolate_missing_values(
         df_missing["close"] = np.nan
         df_missing["volume"] = np.nan
 
-        df_missing = df_missing.astype(
-            {
-                "open": "int",
-                "high": "int",
-                "low": "int",
-                "close": "int",
-                "volume": "int",
-            }
-        )
+        # df_missing = df_missing.astype(
+        #     {
+        #         "open": "float64",
+        #         "high": "float64",
+        #         "low": "float64",
+        #         "close": "float64",
+        #         "volume": "float64",
+        #     }
+        # )
 
         df_combined = pd.concat([df_existing, df_missing])
         df_combined.sort_values("time", inplace=True)
@@ -286,10 +286,22 @@ def check_and_interpolate_missing_values(
         df_combined.set_index("time", inplace=True)
         df_combined.interpolate(method="linear", inplace=True)
 
-        df_combined["open"] = df_combined["open"].round(0).astype(int)
-        df_combined["high"] = df_combined["high"].round(0).astype(int)
-        df_combined["low"] = df_combined["low"].round(0).astype(int)
-        df_combined["close"] = df_combined["close"].round(0).astype(int)
+        # 모든 컬럼을 정수형으로 변환하고 메모리 최적화 (downcast)
+        df_combined["open"] = pd.to_numeric(
+            df_combined["open"].round(0), downcast="integer"
+        )
+        df_combined["high"] = pd.to_numeric(
+            df_combined["high"].round(0), downcast="integer"
+        )
+        df_combined["low"] = pd.to_numeric(
+            df_combined["low"].round(0), downcast="integer"
+        )
+        df_combined["close"] = pd.to_numeric(
+            df_combined["close"].round(0), downcast="integer"
+        )
+        df_combined["volume"] = pd.to_numeric(
+            df_combined["volume"].round(0), downcast="integer"
+        )
 
         df_combined.reset_index(inplace=True)
 
@@ -299,11 +311,11 @@ def check_and_interpolate_missing_values(
         for index, row in interpolated_df.iterrows():
             stmt = pg_insert(BtcOhlc).values(
                 time=row["time"],
-                open=row["open"],
-                high=row["high"],
-                low=row["low"],
-                close=row["close"],
-                volume=row["volume"],
+                open=int(row["open"]),
+                high=int(row["high"]),
+                low=int(row["low"]),
+                close=int(row["close"]),
+                volume=int(row["volume"]),
             )
             upsert_stmt = stmt.on_conflict_do_update(
                 index_elements=["time"],
