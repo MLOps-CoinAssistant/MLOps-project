@@ -514,6 +514,7 @@ def collect_and_load_data() -> None:
             ) == end_date.replace(minute=0, second=0, microsecond=0):
                 return
             print("load not first. fetch 1 hour data")
+            # timedelta(hours=1)로 하니까 정각에 호출하게 돼서 그 시간의 데이터를 가져오지못함. -> 1분 뒤의 시간으로 호출
             start_date = last_loaded_time + timedelta(hours=1, minutes=1)
             to_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
             print(f"to date: {to_date}")
