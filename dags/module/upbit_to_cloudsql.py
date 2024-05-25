@@ -6,7 +6,7 @@ from sqlalchemy import (
     create_engine,
     Column,
     DateTime,
-    Float,
+    Integer,
     MetaData,
     func,
     inspect,
@@ -38,11 +38,11 @@ Base = declarative_base()
 class BtcOhlc(Base):
     __tablename__ = "btc_ohlc"
     time = Column(DateTime, primary_key=True)
-    open = Column(Float)
-    high = Column(Float)
-    low = Column(Float)
-    close = Column(Float)
-    volume = Column(Float)
+    open = Column(Integer)
+    high = Column(Integer)
+    low = Column(Integer)
+    close = Column(Integer)
+    volume = Column(Integer)
     __table_args__ = (Index("idx_btc_ohlc_time", "time"),)
 
 
@@ -96,28 +96,37 @@ def fetch_ohlcv_data(market: str, to: str, count: int) -> Optional[List[Dict]]:
     max_backoff_time = 32  # 최대 대기 시간 설정 (64초). Ecponential Backoff방식 : 429에러 발생시 처음1초 대기 후 재시도하고, 이후에는 대기시간을 2배씩 늘려가면서 최대 64초까지 대기시킴.
     max_retries = 5
     retry_count = 0
-    while retry_count < max_retries:
+    if count > 1:
+        while retry_count < max_retries:
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                min_req, sec_req = check_remaining_requests(response.headers)
+                if min_req is not None and sec_req is not None and sec_req < 5:
+                    print(
+                        f"Rate limit close to being exceeded. Waiting for 1 second..."
+                    )
+                    time.sleep(0.5)
+                return data
+            elif response.status_code == 429:
+                print(
+                    f"Rate limit exceeded. Waiting for {backoff_time} seconds before retrying..."
+                )
+                time.sleep(backoff_time)
+                backoff_time = min(
+                    backoff_time * 2, max_backoff_time
+                )  # Exponential backoff
+                retry_count += 1
+            else:
+                print(f"Error fetching data: {response.status_code}, {response.text}")
+                return None
+        print(f"Failed to fetch data after {max_retries} retries.")
+
+    else:
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             data = response.json()
-            min_req, sec_req = check_remaining_requests(response.headers)
-            if min_req is not None and sec_req is not None and sec_req < 5:
-                print(f"Rate limit close to being exceeded. Waiting for 1 second...")
-                time.sleep(0.5)
             return data
-        elif response.status_code == 429:
-            print(
-                f"Rate limit exceeded. Waiting for {backoff_time} seconds before retrying..."
-            )
-            time.sleep(backoff_time)
-            backoff_time = min(
-                backoff_time * 2, max_backoff_time
-            )  # Exponential backoff
-            retry_count += 1
-        else:
-            print(f"Error fetching data: {response.status_code}, {response.text}")
-            return None
-    print(f"Failed to fetch data after {max_retries} retries.")
     return None
 
 
@@ -265,11 +274,11 @@ def check_and_interpolate_missing_values(
 
         df_missing = df_missing.astype(
             {
-                "open": "float64",
-                "high": "float64",
-                "low": "float64",
-                "close": "float64",
-                "volume": "float64",
+                "open": "int",
+                "high": "int",
+                "low": "int",
+                "close": "int",
+                "volume": "int",
             }
         )
 
@@ -279,10 +288,10 @@ def check_and_interpolate_missing_values(
         df_combined.set_index("time", inplace=True)
         df_combined.interpolate(method="linear", inplace=True)
 
-        df_combined["open"] = df_combined["open"].round(0).astype(float)
-        df_combined["high"] = df_combined["high"].round(0).astype(float)
-        df_combined["low"] = df_combined["low"].round(0).astype(float)
-        df_combined["close"] = df_combined["close"].round(0).astype(float)
+        df_combined["open"] = df_combined["open"].round(0).astype(int)
+        df_combined["high"] = df_combined["high"].round(0).astype(int)
+        df_combined["low"] = df_combined["low"].round(0).astype(int)
+        df_combined["close"] = df_combined["close"].round(0).astype(int)
 
         df_combined.reset_index(inplace=True)
 
@@ -319,6 +328,7 @@ def check_and_sort_data(session: Session) -> None:
     """
     데이터를 정렬하는 함수. 결측치 보간 후 정렬을 위해 사용.
     """
+
     sort_check_query = """
         SELECT time
         FROM btc_ohlc
@@ -377,7 +387,7 @@ def process_data(
     initial_load: bool,
 ) -> None:
     """ """
-
+    s = time.time()
     records = []
     for item in data:
         try:
@@ -395,7 +405,9 @@ def process_data(
             records.append(new_record)
         except Exception as e:
             print(f"Error preparing record: {e}, data: {item}")
-
+    e = time.time()
+    se = e - s
+    print(f"records time : {se}")
     # 데이터가 있는지 확인
     if records:
 
@@ -408,7 +420,21 @@ def process_data(
             print(
                 f"{len(records)} records inserted successfully using bulk_insert_mappings."
             )
+            # 결측치 보간
+            s = time.time()
+            check_and_interpolate_missing_values(session, start_date, end_date)
+            e = time.time()
+            es = e - s
+            print(f"interpolate time: {es} seconds")
+
+            # 데이터 정렬
+            s = time.time()
+            check_and_sort_data(session)
+            e = time.time()
+            es = e - s
+            print(f"sorting time: {es} seconds")
         else:
+            s = time.time()
             for record in records:
                 stmt = pg_insert(BtcOhlc).values(
                     time=record.time,
@@ -431,20 +457,17 @@ def process_data(
                 session.execute(upsert_stmt)
             session.commit()
             print(f"{len(records)} records inserted successfully using session.add().")
+            e = time.time()
+            se = e - s
+            print(f"records time : {se}")
 
-    # 결측치 보간
-    check_and_interpolate_missing_values(session, start_date, end_date)
-
-    # 데이터 정렬
-    check_and_sort_data(session)
-
-    # 최종 데이터 정렬 및 조회
-    start_sort_time = time.time()
-    sorted_data = session.query(BtcOhlc).order_by(BtcOhlc.time.asc()).all()
-    end_sort_time = time.time()
-    sort_duration = end_sort_time - start_sort_time
-    print(f"Data sorting took {sort_duration} seconds")
-    print(f"Total sorted records after interpolation: {len(sorted_data)}")
+    # # 최종 데이터 정렬 및 조회
+    # start_sort_time = time.time()
+    # sorted_data = session.query(BtcOhlc).order_by(BtcOhlc.time.asc()).all()
+    # end_sort_time = time.time()
+    # sort_duration = end_sort_time - start_sort_time
+    # print(f"Data sorting took {sort_duration} seconds")
+    # print(f"Total sorted records after interpolation: {len(sorted_data)}")
 
 
 # 데이터를 수집하고 데이터베이스에 적재하는 함수
@@ -484,14 +507,16 @@ def collect_and_load_data() -> None:
 
         # 아직 1시간이 지나지 않았을 때 요청이 들어오면 작업 종료.
         # ex) 1시30분경에 요청이 들어온다면, 이미 1시에 데이터가 들어오는 작업이 진행됐으므로 2시가 되기 전까지는 이 태스크 실행이 의미가 없음
+
         if last_loaded_time:
             if last_loaded_time.replace(
                 minute=0, second=0, microsecond=0
             ) == end_date.replace(minute=0, second=0, microsecond=0):
                 return
             print("load not first. fetch 1 hour data")
-            start_date = last_loaded_time + timedelta(hours=1)
+            start_date = last_loaded_time + timedelta(hours=1, minutes=1)
             to_date = start_date.strftime("%Y-%m-%dT%H:%M:%S")
+            print(f"to date: {to_date}")
             data = fetch_ohlcv_data("KRW-BTC", to_date, 1)
             initial_load = False
 
@@ -510,13 +535,16 @@ def collect_and_load_data() -> None:
         # 세션 내 데이터 확인
         session_times = session.query(BtcOhlc.time).all()
         print(f"Data in session before processing: {session_times}")
-
+        s_time = time.time()
+        print(f"1234134: {data[0]}")
         if data:
             process_data(data, start_date, end_date, session, initial_load)
             print("data processing finished")
         else:
             print("No data fetched")
-
+        e_time = time.time()
+        etime = e_time - s_time
+        print(f"processing time: {etime} seconds")
     except Exception as e:
         print(f"An error occurred: {e}")
         session.rollback()
