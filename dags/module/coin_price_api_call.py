@@ -16,7 +16,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.orm import Session, declarative_base
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, List
@@ -420,56 +420,104 @@ def process_data(
     print(f"records time : {se}")
     # 데이터가 있는지 확인
     if records:
+        try:
 
-        # 1년치 데이터를 먼저 삽입
-        if initial_load:
-            session.bulk_insert_mappings(
-                BtcOhlc, [record.__dict__ for record in records]
-            )
-            session.commit()
-            print(
-                f"{len(records)} records inserted successfully using bulk_insert_mappings."
-            )
-            # 결측치 보간
-            s = time.time()
-            check_and_interpolate_missing_values(session, start_date, end_date)
-            e = time.time()
-            es = e - s
-            print(f"interpolate time: {es} seconds")
+            # 1년치 데이터를 먼저 삽입
+            if initial_load:
+                session.bulk_insert_mappings(
+                    BtcOhlc, [record.__dict__ for record in records]
+                )
+                session.commit()
+                print(
+                    f"{len(records)} records inserted successfully using bulk_insert_mappings."
+                )
+                # 결측치 보간
+                s = time.time()
+                check_and_interpolate_missing_values(session, start_date, end_date)
+                e = time.time()
+                es = e - s
+                print(f"interpolate time: {es} seconds")
 
-            # 데이터 정렬
-            s = time.time()
-            check_and_sort_data(session)
-            e = time.time()
-            es = e - s
-            print(f"sorting time: {es} seconds")
-        else:
-            s = time.time()
-            for record in records:
-                stmt = pg_insert(BtcOhlc).values(
-                    time=record.time,
-                    open=record.open,
-                    high=record.high,
-                    low=record.low,
-                    close=record.close,
-                    volume=record.volume,
-                )
-                upsert_stmt = stmt.on_conflict_do_update(
-                    index_elements=["time"],
-                    set_={
-                        "open": stmt.excluded.open,
-                        "high": stmt.excluded.high,
-                        "low": stmt.excluded.low,
-                        "close": stmt.excluded.close,
-                        "volume": stmt.excluded.volume,
-                    },
-                )
-                session.execute(upsert_stmt)
-            session.commit()
-            print(f"{len(records)} records inserted successfully using session.add().")
-            e = time.time()
-            se = e - s
-            print(f"records time : {se}")
+                # 데이터 정렬
+                s = time.time()
+                check_and_sort_data(session)
+                e = time.time()
+                es = e - s
+                print(f"sorting time: {es} seconds")
+                result = session.query(BtcOhlc.time).order_by(BtcOhlc.time).all()
+                if result:
+                    first = result[:10]
+                    last = result[-10:]
+                    print(f"First 10 times: {first}")
+                    print(f"Last 10 times: {last}")
+                else:
+                    print("No data found in the table.")
+            else:
+                s = time.time()
+                batch_size = 10  # 적절한 배치 크기로 설정
+                print(1)
+                print(records)
+                for i in range(0, len(records), batch_size):
+                    batch_records = records[i : i + batch_size]
+                    retries = 0
+                    max_retries = 3
+                    while retries < max_retries:
+                        try:
+                            for record in batch_records:
+                                stmt = pg_insert(BtcOhlc).values(
+                                    time=record.time,
+                                    open=record.open,
+                                    high=record.high,
+                                    low=record.low,
+                                    close=record.close,
+                                    volume=record.volume,
+                                )
+                                upsert_stmt = stmt.on_conflict_do_update(
+                                    index_elements=["time"],
+                                    set_={
+                                        "open": stmt.excluded.open,
+                                        "high": stmt.excluded.high,
+                                        "low": stmt.excluded.low,
+                                        "close": stmt.excluded.close,
+                                        "volume": stmt.excluded.volume,
+                                    },
+                                )
+                                print(2)
+                                session.execute(upsert_stmt)
+                            session.commit()
+                            break
+                        except OperationalError as e:
+                            print(f"OperationalError occurred: {e}")
+                            session.rollback()
+                            retries += 1
+                            if retries < max_retries:
+                                wait_time = (
+                                    2**retries
+                                )  # 지수 백오프 방식으로 대기 시간 설정
+                                print(f"Retrying in {wait_time} seconds...")
+                                time.sleep(wait_time)
+                            else:
+                                print(
+                                    "Max retries reached. Could not complete the transaction."
+                                )
+                                raise
+                        except Exception as e:
+                            print(f"An error occurred while inserting data: {e}")
+                            session.rollback()
+                            raise
+
+                e = time.time()
+                se = e - s
+                print(f"records time : {se}")
+
+        except OperationalError as e:
+            print(f"OperationalError occurred: {e}")
+            session.rollback()
+        except Exception as e:
+            print(f"An error occurred while inserting data: {e}")
+            session.rollback()
+        finally:
+            session.close()
 
     # # 최종 데이터 정렬 및 조회
     # start_sort_time = time.time()
@@ -519,10 +567,10 @@ def collect_and_load_data() -> None:
         # ex) 1시30분경에 요청이 들어온다면, 이미 1시에 데이터가 들어오는 작업이 진행됐으므로 2시가 되기 전까지는 이 태스크 실행이 의미가 없음
 
         if last_loaded_time:
-            if last_loaded_time.replace(
-                minute=0, second=0, microsecond=0
-            ) == end_date.replace(minute=0, second=0, microsecond=0):
-                return
+            # if last_loaded_time.replace(
+            #     minute=0, second=0, microsecond=0
+            # ) == end_date.replace(minute=0, second=0, microsecond=0):
+            #     return
             print("load not first. fetch 1 hour data")
             # timedelta(hours=1)로 하니까 정각에 호출하게 돼서 그 시간의 데이터를 가져오지못함. -> 1분 뒤의 시간으로 호출
             start_date = last_loaded_time + timedelta(hours=1, minutes=1)
@@ -553,6 +601,7 @@ def collect_and_load_data() -> None:
             print("data processing finished")
         else:
             print("No data fetched")
+        check_and_sort_data(session)
         e_time = time.time()
         etime = e_time - s_time
         print(f"processing time: {etime} seconds")
