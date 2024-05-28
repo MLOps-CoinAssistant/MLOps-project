@@ -167,3 +167,4 @@ yarl==1.9.4
 zipp==3.18.1
 mlflow==1.27.0
 xgboost==2.0.3
+lightgbm==4.3.0
