@@ -7,7 +7,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
 
-# import lightgbm as lgb
+from lightgbm import LGBMRegressor
 from sqlalchemy.orm import Session
 from typing import Tuple, List, Any
 
@@ -142,75 +142,37 @@ def split_data(
     return x_train, x_test, y_train, y_test
 
 
-def XGboostRegressor(
-    x_train: pd.DataFrame, y_train: pd.Series, params: dict
-) -> XGBRegressor:
-    # 모델 예측
-    # XGboost Regressor 를 사용하여 TimeSeriesSplit 교차검증 수행
-    # TimeSeriesSplit 방식을 사용하면 시계열 데이터의 특성을 반영하여 데이터를 분할하기 때문에 data leakage를 방지할 수 있다
-    # 모델 평가 지표 : MSE, R-squared
-
-    val_scores_mse = []
-    val_scores_r2 = []
-    tscv = TimeSeriesSplit(n_splits=5)
-
-    for i, (trn_idx, val_idx) in enumerate(tscv.split(x_train)):
-        x_trn, y_trn = x_train.iloc[trn_idx], y_train.iloc[trn_idx]
-        x_val, y_val = x_train.iloc[val_idx], y_train.iloc[val_idx]
-
-        # 전처리 (필요한 경우)
-        # x_trn, x_val, x_test = preprocess(x_trn, x_val, x_test)
-
-        # 모델 정의
-        model = XGBRegressor(
-            **params, random_state=42, eval_metric="rmse", early_stopping_rounds=10
-        )
-
-        # 모델 학습
-        model.fit(
-            x_trn,
-            y_trn,
-            eval_set=[(x_val, y_val)],
-            verbose=False,
-        )
-
-        # 예측
-        y_trn_pred = model.predict(x_trn)
-        y_val_pred = model.predict(x_val)
-
-        # 훈련, 검증 데이터 평가
-        trn_mse = mean_squared_error(y_trn, y_trn_pred)
-        val_mse = mean_squared_error(y_val, y_val_pred)
-        trn_r2 = r2_score(y_trn, y_trn_pred)
-        val_r2 = r2_score(y_val, y_val_pred)
-
-        print(f"{i} Fold, train MSE: {trn_mse:.4f}, validation MSE: {val_mse:.4f}")
-        print(
-            f"{i} Fold, train R-squared: {trn_r2:.4f}, validation R-squared: {val_r2:.4f}"
-        )
-
-        val_scores_mse.append(val_mse)
-        val_scores_r2.append(val_r2)
-
-    # 교차 검증 성능 평균 계산하기
-    print("Cross Validation Score of MSE: {:.4f}".format(np.mean(val_scores_mse)))
-    print("Cross Validation Score of R-squared: {:.4f}".format(np.mean(val_scores_r2)))
-
-    return model
-
-
-def objective(trial, x_train: pd.DataFrame, y_train: pd.Series) -> float:
-
-    param = {
-        "n_estimators": trial.suggest_int("n_estimators", 50, 200),
-        "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1, log=True),
-        "max_depth": trial.suggest_int("max_depth", 2, 10),
-        "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-        "gamma": trial.suggest_float("gamma", 0, 10),
-        "alpha": trial.suggest_float("alpha", 5, 10),
-        "lambda": trial.suggest_float("lambda", 5, 10),
-    }
+# XGBRegressor, RandomForestRegressor, LGBMRegressor
+def objective(trial, model_class, x_train: pd.DataFrame, y_train: pd.Series) -> float:
+    if model_class == XGBRegressor:
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 50, 200),
+            "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1, log=True),
+            "max_depth": trial.suggest_int("max_depth", 2, 10),
+            "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+            "gamma": trial.suggest_float("gamma", 0, 10),
+            "alpha": trial.suggest_float("alpha", 1, 10),
+            "lambda": trial.suggest_float("lambda", 1, 10),
+        }
+    elif model_class == RandomForestRegressor:
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 50, 200),
+            "max_depth": trial.suggest_int("max_depth", 2, 10),
+            "min_samples_split": trial.suggest_int("min_samples_split", 2, 10),
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+        }
+    elif model_class == LGBMRegressor:
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 50, 200),
+            "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1, log=True),
+            "max_depth": trial.suggest_int("max_depth", 2, 10),
+            "num_leaves": trial.suggest_int("num_leaves", 20, 50),
+            "min_child_samples": trial.suggest_int("min_child_samples", 5, 20),
+            "gamma": trial.suggest_float("gamma", 0, 10),
+            "alpha": trial.suggest_float("alpha", 1, 10),
+            "lambda": trial.suggest_float("lambda", 1, 10),
+        }
 
     val_scores_mse = []
     val_scores_r2 = []
@@ -220,15 +182,20 @@ def objective(trial, x_train: pd.DataFrame, y_train: pd.Series) -> float:
         x_trn, y_trn = x_train.iloc[trn_idx], y_train.iloc[trn_idx]
         x_val, y_val = x_train.iloc[val_idx], y_train.iloc[val_idx]
 
-        model = XGBRegressor(
-            **param, random_state=42, eval_metric="rmse", early_stopping_rounds=10
-        )
-        model.fit(
-            x_trn,
-            y_trn,
-            eval_set=[(x_val, y_val)],
-            verbose=False,
-        )
+        model = model_class(**params)
+
+        if model_class == XGBRegressor:
+            model.fit(
+                x_trn,
+                y_trn,
+                eval_set=[(x_val, y_val)],
+                verbose=False,
+                early_stopping_rounds=10,
+            )
+        elif model_class == LGBMRegressor:
+            model.fit(x_trn, y_trn, eval_set=[(x_val, y_val)], eval_metric="rmse")
+        else:
+            model.fit(x_trn, y_trn)
 
         y_val_pred = model.predict(x_val)
         val_mse = mean_squared_error(y_val, y_val_pred)
@@ -258,6 +225,44 @@ class LoggingCallback:
         )
 
 
+# 튜닝 함수
+def tune_model(model_class, x_train, y_train, n_trials=30):
+    study = optuna.create_study(direction="minimize")  # MSE 최소화
+    logging_callback = LoggingCallback(n_trials)  # 로깅 콜백 설정
+    study.optimize(
+        lambda trial: objective(trial, model_class, x_train, y_train),
+        n_trials=n_trials,
+        callbacks=[logging_callback],
+    )
+    best_params = study.best_trial.params
+    best_model = model_class(**best_params)
+    best_model.fit(x_train, y_train)
+    return best_model
+
+
+# OOF 앙상블 예측 함수
+def oof_predict(
+    models: List[Any], x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Series
+) -> Tuple[np.ndarray, np.ndarray]:
+    tscv = TimeSeriesSplit(n_splits=3)
+    oof_train = np.zeros((x_train.shape[0], len(models)))
+    oof_test = np.zeros((x_test.shape[0], len(models)))
+    oof_test_skf = np.empty((3, x_test.shape[0], len(models)))
+
+    for i, model in enumerate(models):
+        for j, (train_idx, val_idx) in enumerate(tscv.split(x_train)):
+            x_trn, y_trn = x_train.iloc[train_idx], y_train.iloc[train_idx]
+            x_val, y_val = x_train.iloc[val_idx], y_train.iloc[val_idx]
+
+            model.fit(x_trn, y_trn)
+            oof_train[val_idx, i] = model.predict(x_val)
+            oof_test_skf[j, :, i] = model.predict(x_test)
+
+        oof_test[:, i] = oof_test_skf[:, :, i].mean(axis=0)
+
+    return oof_train, oof_test
+
+
 # 메인으로 실행 될 함수
 def predict() -> None:
     # 데이터 분리 함수 호출
@@ -267,37 +272,34 @@ def predict() -> None:
     # 데이터 전처리
     x_train, x_test = preprocess(x_train, x_test)
 
-    n_trials = 30  # 시도 횟수
+    n_trials = 10  # 시도 횟수
     logging_callback = LoggingCallback(n_trials)  # 로깅 콜백 설정
 
-    # Optuna study 생성 및 최적화
-    study = optuna.create_study(direction="minimize")  # MSE 최소화
-    study.optimize(
-        lambda trial: objective(trial, x_train, y_train),
-        n_trials=n_trials,
-        callbacks=[logging_callback],
-    )
+    models = {
+        "XGB": XGBRegressor,
+        "RandomForest": RandomForestRegressor,
+        "LGBM": LGBMRegressor,
+    }
 
-    best_trial = study.best_trial
-    print(f"Best trial: {best_trial.value}")
-    print(f"Best params: {best_trial.params}")
+    tuned_models = []
+    for model_name, model_class in models.items():
+        print(f"Tuning {model_name}...")
+        tuned_model = tune_model(model_class, x_train, y_train, n_trials)
+        tuned_models.append(tuned_model)
+        print(f"Best parameters for {model_name}: {tuned_model.get_params()}")
 
-    print(f"Best trial mean MSE: {best_trial.user_attrs['mean_mse']}")
-    print(f"Best trial mean R-squared: {best_trial.user_attrs['mean_r2']}")
+    # Out-of-Fold 앙상블
+    oof_train, oof_test = oof_predict(tuned_models, x_train, x_test, y_train)
 
-    # 최적의 하이퍼파라미터로 모델 학습
-    best_params = study.best_trial.params
-    model = XGboostRegressor(x_train, y_train, best_params)
-
-    # 테스트 데이터에 대한 예측
-    y_test_pred = model.predict(x_test)
+    # 앙상블 예측
+    ensemble_preds = oof_test.mean(axis=1)
 
     # 성능 평가
-    test_mse = mean_squared_error(y_test, y_test_pred)
-    test_r2 = r2_score(y_test, y_test_pred)
+    test_mse = mean_squared_error(y_test, ensemble_preds)
+    test_r2 = r2_score(y_test, ensemble_preds)
 
-    print(f"Test Mean Squared Error: {test_mse:.4f}")
-    print(f"Test R-squared: {test_r2:.4f}")
+    print(f"Ensemble Test Mean Squared Error: {test_mse:.4f}")
+    print(f"Ensemble Test R-squared: {test_r2:.4f}")
 
     elapsed_time = time.time() - start_time
-    print(f"Elapsed time for modeling task: {elapsed_time} seconds")
+    print(f"Elapsed time for modeling task: {elapsed_time:.2f} seconds")
