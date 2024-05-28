@@ -12,7 +12,7 @@ from module import coin_news_api_call, email_tasks
     doc_md=__doc__,
     tags=["postgresql", "db", "news"],
 )
-def news_api_call_pipeline() -> None:
+def coin_news_api_pipeline() -> None:
     start_task: EmptyOperator = EmptyOperator(task_id="start_task")
 
     create_db_task: PythonOperator = PythonOperator(
@@ -36,4 +36,4 @@ def news_api_call_pipeline() -> None:
     [create_db_task, clear_and_save_news_task, end_task] >> failure_email
 
 
-news_api_call_pipeline()
+coin_news_api_pipeline()

@@ -166,4 +166,3 @@ WTForms==3.1.2
 yarl==1.9.4
 zipp==3.18.1
 mlflow==1.27.0
-pyupbit==0.2.33

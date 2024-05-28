@@ -78,7 +78,7 @@ from dags.module.info.connections import Connections
 #         mlflow.log_params(best_params)
 #         mlflow.log_metrics(metrics)
 #         model_info = mlflow.sklearn.log_model(pipeline, "model")
-#     context["ti"].xcom_push(key="run_id", value=model_info.run_id)
+#     context["ti"].xcom_push(key="run_id", value=.run_id)
 #     context["ti"].xcom_push(key="model_uri", value=model_info.model_uri)
 #     context["ti"].xcom_push(key="eval_metric", value="f1_score")
 #     print(
