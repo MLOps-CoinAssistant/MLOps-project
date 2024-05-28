@@ -2,16 +2,14 @@ version: '3.4'
 
 x-common-env-vars: &common-env-vars
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
-  AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql://postgres:postgres@:localhost:5432
-  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://postgres:@postgres:localhost:5432
+  AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql://postgres:postgres@postgres:5432
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://postgres:postgres@postgres:5432
   AIRFLOW__CORE__LOAD_EXAMPLES: "False"
   AIRFLOW__CORE__FERNET_KEY: "d6Vefz3G9U_ynXB3cr7y_Ak35tAHkEGAVxuz_B-jzWw="
   AIRFLOW__WEBSERVER__SECRET_KEY: "ml-ops-project_c92c7b"
   AIRFLOW__WEBSERVER__RBAC: "True"
   AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
   ASTRONOMER_ENVIRONMENT: local
-  UPBIT_ACCESS_KEY: None
-  UPBIT_SECRET_KEY: None
   AWS_ACCESS_KEY_ID: None
   AWS_SECRET_ACCESS_KEY: None
   MLFLOW_TRACKING_URI: http://host.docker.internal:5000
@@ -19,7 +17,7 @@ x-common-env-vars: &common-env-vars
 
   AIRFLOW__EMAIL__EMAIL_BACKEND: 'airflow.utils.email.send_email_smtp'
   AIRFLOW__EMAIL__EMAIL_CONN_ID: smtp_default
-  AIRFLOW__SMTP__SMTP_MAIL_FROM: 'email@naver.com'
+  AIRFLOW__SMTP__SMTP_MAIL_FROM: 'None@naver.com'
 
   AIRFLOW__SMTP__SMTP_HOST: 'smtp.naver.com'
   AIRFLOW__SMTP__SMTP_STARTTLS: 'True'
@@ -33,10 +31,29 @@ networks:
     driver: bridge
 
 volumes:
+  # postgres_data:
+  #   driver: local
   airflow_logs:
     driver: local
 
 services:
+  # postgres:
+  #   image: docker.io/postgres:12.6
+  #   restart: unless-stopped
+  #   networks:
+  #     - airflow
+  #   labels:
+  #     io.astronomer.docker: "true"
+  #     io.astronomer.docker.cli: "true"
+  #   ports:
+  #     - 127.0.0.1:5432:5432
+  #   volumes:
+
+  #     - postgres_data:/var/lib/postgresql/data
+
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
 
   scheduler:
     image: ml-ops-project_c92c7b/airflow:latest
@@ -50,8 +67,9 @@ services:
       io.astronomer.docker: "true"
       io.astronomer.docker.cli: "true"
       io.astronomer.docker.component: "airflow-scheduler"
-    environment:
-      <<: *common-env-vars
+    # depends_on:
+    #   - postgres
+    environment: *common-env-vars
     volumes:
       - /home/ubuntu/MLOps-project/dags:/usr/local/airflow/dags:z
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z
@@ -123,8 +141,9 @@ services:
       io.astronomer.docker: "true"
       io.astronomer.docker.cli: "true"
       io.astronomer.docker.component: "airflow-triggerer"
-    environment:
-      <<: *common-env-vars
+    # depends_on:
+    #   - postgres
+    environment: *common-env-vars
     volumes:
       - /home/ubuntu/MLOps-project/dags:/usr/local/airflow/dags:z
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z

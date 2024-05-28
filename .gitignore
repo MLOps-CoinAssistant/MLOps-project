@@ -2,6 +2,8 @@
 .env
 .DS_Store
 airflow_settings.yaml
+# compose.yaml
+# mlflow-compose.yaml
 __pycache__/
 astro
 .venv
@@ -9,8 +11,4 @@ airflow-webserver.pid
 webserver_config.py
 airflow.cfg
 airflow.db
-compose.yaml
-mlflow-compose.yaml
-*.yaml
-*.yml
 .idea
