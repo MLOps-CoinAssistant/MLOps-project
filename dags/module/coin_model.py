@@ -146,7 +146,7 @@ def split_data(
 def objective(trial, model_class, x_train: pd.DataFrame, y_train: pd.Series) -> float:
     if model_class == XGBRegressor:
         params = {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 200),
+            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
             "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1, log=True),
             "max_depth": trial.suggest_int("max_depth", 2, 10),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
@@ -157,21 +157,20 @@ def objective(trial, model_class, x_train: pd.DataFrame, y_train: pd.Series) -> 
         }
     elif model_class == RandomForestRegressor:
         params = {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 200),
+            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
             "max_depth": trial.suggest_int("max_depth", 2, 10),
             "min_samples_split": trial.suggest_int("min_samples_split", 2, 10),
             "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
         }
     elif model_class == LGBMRegressor:
         params = {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 200),
+            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
             "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1, log=True),
             "max_depth": trial.suggest_int("max_depth", 2, 10),
             "num_leaves": trial.suggest_int("num_leaves", 20, 50),
             "min_child_samples": trial.suggest_int("min_child_samples", 5, 20),
-            "gamma": trial.suggest_float("gamma", 0, 10),
-            "alpha": trial.suggest_float("alpha", 1, 10),
-            "lambda": trial.suggest_float("lambda", 1, 10),
+            "reg_alpha": trial.suggest_float("alpha", 1, 10),
+            "reg_lambda": trial.suggest_float("lambda", 1, 10),
         }
 
     val_scores_mse = []
