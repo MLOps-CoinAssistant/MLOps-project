@@ -166,3 +166,5 @@ WTForms==3.1.2
 yarl==1.9.4
 zipp==3.18.1
 mlflow==1.27.0
+matplotlib==3.9.0
+seaborn==0.13.2
