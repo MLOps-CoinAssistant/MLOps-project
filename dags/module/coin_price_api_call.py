@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from dags.module.info.connections import Connections
-from dags.module.info.api import APIInformation
+from info.connections import Connections
+from info.api import APIInformation
 from sqlalchemy import (
     create_engine,
     Column,
@@ -57,7 +57,6 @@ if not upbit_access_key or not upbit_secret_key:
 
 # 데이터베이스 연결 엔진을 생성합니다.
 engine = create_engine(postgres_hook.get_uri())
-
 session = Session(bind=engine)
 
 
