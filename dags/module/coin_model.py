@@ -61,63 +61,34 @@ def preprocess(
     df_x_valid = x_valid.copy()
     df_x_test = x_test.copy()
 
-    df_x_train = df_x_train.reset_index(drop=True)
-    df_x_valid = df_x_valid.reset_index(drop=True)
-    df_x_test = df_x_test.reset_index(drop=True)
+    dfs = [df_x_train, df_x_valid, df_x_test]
+    periods = ["year", "month", "day", "hour"]
 
-    # 새로운 컬럼 생성
-    df_x_train["price_diff"] = df_x_train["high"] - df_x_train["low"]
-    df_x_valid["price_diff"] = df_x_valid["high"] - df_x_valid["low"]
-    df_x_test["price_diff"] = df_x_test["high"] - df_x_test["low"]
+    for i in range(len(dfs)):
+        dfs[i] = dfs[i].reset_index(drop=True)
 
-    df_x_train["log_return"] = np.log(
-        df_x_train["close"] / df_x_train["close"].shift(1)
-    )
-    df_x_valid["log_return"] = np.log(
-        df_x_valid["close"] / df_x_valid["close"].shift(1)
-    )
-    df_x_test["log_return"] = np.log(df_x_test["close"] / df_x_test["close"].shift(1))
+        # 새로운 컬럼 생성
+        dfs[i]["price_diff"] = dfs[i]["high"] - dfs[i]["low"]
 
-    df_x_train["year"] = df_x_train["time"].dt.year
-    df_x_train["month"] = df_x_train["time"].dt.month
-    df_x_train["day"] = df_x_train["time"].dt.day
-    df_x_train["hour"] = df_x_train["time"].dt.hour
+        for period in periods:
+            dfs[i][period] = dfs[i]["time"].apply(lambda x: getattr(x, period))
 
-    df_x_valid["year"] = df_x_valid["time"].dt.year
-    df_x_valid["month"] = df_x_valid["time"].dt.month
-    df_x_valid["day"] = df_x_valid["time"].dt.day
-    df_x_valid["hour"] = df_x_valid["time"].dt.hour
+        # time 컬럼 제거
+        dfs[i].drop(columns=["time"], inplace=True)
 
-    df_x_test["year"] = df_x_test["time"].dt.year
-    df_x_test["month"] = df_x_test["time"].dt.month
-    df_x_test["day"] = df_x_test["time"].dt.day
-    df_x_test["hour"] = df_x_test["time"].dt.hour
-    # 주기성 피처 생성 (24시간 주기)
-    df_x_train["hour_sin"] = np.sin(2 * np.pi * df_x_train["hour"] / 24)
-    df_x_train["hour_cos"] = np.cos(2 * np.pi * df_x_train["hour"] / 24)
-    df_x_valid["hour_sin"] = np.sin(2 * np.pi * df_x_valid["hour"] / 24)
-    df_x_valid["hour_cos"] = np.cos(2 * np.pi * df_x_valid["hour"] / 24)
-    df_x_test["hour_sin"] = np.sin(2 * np.pi * df_x_test["hour"] / 24)
-    df_x_test["hour_cos"] = np.cos(2 * np.pi * df_x_test["hour"] / 24)
+        # 주기성 피처 생성 (24시간 주기)
+        dfs[i]["hour_sin"] = np.sin(2 * np.pi * dfs[i]["hour"] / 24)
+        dfs[i]["hour_cos"] = np.cos(2 * np.pi * dfs[i]["hour"] / 24)
 
-    # time 컬럼 제거
-    df_x_train.drop(columns=["time"], inplace=True)
-    df_x_valid.drop(columns=["time"], inplace=True)
-    df_x_test.drop(columns=["time"], inplace=True)
-
-    # 결측치 처리
-    # log_return 컬럼에서 NaN 값을 0으로 대체 (첫번째 행이 NaN값으로 옴)
-    df_x_train["log_return"].fillna(0, inplace=True)
-    df_x_valid["log_return"].fillna(0, inplace=True)
-    df_x_test["log_return"].fillna(0, inplace=True)
-
-    # 이상치 처리
-    # volume이 3000 이상인 데이터는 3000으로 대체
-    df_x_train["volume"] = df_x_train["volume"].apply(lambda x: 3000 if x > 3000 else x)
-    df_x_valid["volume"] = df_x_valid["volume"].apply(lambda x: 3000 if x > 3000 else x)
-    df_x_test["volume"] = df_x_test["volume"].apply(lambda x: 3000 if x > 3000 else x)
+        # 이상치 처리
+        # volume이 3000 이상인 데이터는 3000으로 대체
+        dfs[i]["volume"] = dfs[i]["volume"].apply(lambda x: 3000 if x > 3000 else x)
 
     # 스케일링을 위한 피쳐 분리
+
+    df_x_train = dfs[0]
+    df_x_valid = dfs[1]
+    df_x_test = dfs[2]
     features = df_x_train.columns
     features_without_volume = features.drop("volume")
 
@@ -199,6 +170,8 @@ def XGboostRegressor(x_train: pd.DataFrame, y_train: pd.Series) -> XGBRegressor:
             random_state=42,
             subsample=0.8,
             colsample_bytree=0.8,
+            eval_metric="rmse",
+            early_stopping_rounds=10,
         )
 
         # 모델 학습
@@ -206,8 +179,6 @@ def XGboostRegressor(x_train: pd.DataFrame, y_train: pd.Series) -> XGBRegressor:
             x_trn,
             y_trn,
             eval_set=[(x_val, y_val)],
-            eval_metric="rmse",
-            early_stopping_rounds=10,
             verbose=False,
         )
 
