@@ -45,7 +45,6 @@ class BtcOhlcv(Base):
     low = Column(Integer)
     close = Column(Integer)
     volume = Column(Integer)
-    __table_args__ = (Index("idx_btc_ohlcv_time", "time"),)
 
 
 # PostgreSQL 연결 정보를 가져옵니다.
