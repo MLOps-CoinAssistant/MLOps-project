@@ -12,3 +12,4 @@ webserver_config.py
 airflow.cfg
 airflow.db
 .idea
+.ipynb_checkpoints/
