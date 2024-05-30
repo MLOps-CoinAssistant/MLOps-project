@@ -1,20 +1,18 @@
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from dags.module.info.connections import Connections
 from sqlalchemy import create_engine, text
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
-from sklearn.preprocessing import StandardScaler, QuantileTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import QuantileTransformer
+from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
-
-from lightgbm import LGBMRegressor
 from sqlalchemy.orm import Session
-from typing import Tuple, List, Any
+from typing import Tuple
 
-import optuna
 import pandas as pd
 import numpy as np
-import time
 
 """
 eda 결과
@@ -57,59 +55,52 @@ with Session(bind=engine) as session:
 
 
 def preprocess(
-    x_train: pd.DataFrame, x_test: pd.DataFrame
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    x_train: pd.DataFrame, x_valid: pd.DataFrame, x_test: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     df_x_train = x_train.copy()
+    df_x_valid = x_valid.copy()
     df_x_test = x_test.copy()
 
-    df_x_train = df_x_train.reset_index(drop=True)
-    df_x_test = df_x_test.reset_index(drop=True)
+    dfs = [df_x_train, df_x_valid, df_x_test]
+    periods = ["year", "month", "day", "hour"]
 
-    # 새로운 컬럼 생성
-    df_x_train["price_diff"] = df_x_train["high"] - df_x_train["low"]
-    df_x_test["price_diff"] = df_x_test["high"] - df_x_test["low"]
+    for i in range(len(dfs)):
+        dfs[i] = dfs[i].reset_index(drop=True)
 
-    df_x_train["log_return"] = np.log(
-        df_x_train["close"] / df_x_train["close"].shift(1)
-    )
-    df_x_test["log_return"] = np.log(df_x_test["close"] / df_x_test["close"].shift(1))
+        # 새로운 컬럼 생성
+        dfs[i]["price_diff"] = dfs[i]["high"] - dfs[i]["low"]
 
-    df_x_train["year"] = df_x_train["time"].dt.year
-    df_x_train["month"] = df_x_train["time"].dt.month
-    df_x_train["day"] = df_x_train["time"].dt.day
-    df_x_train["hour"] = df_x_train["time"].dt.hour
+        for period in periods:
+            dfs[i][period] = dfs[i]["time"].apply(lambda x: getattr(x, period))
 
-    df_x_test["year"] = df_x_test["time"].dt.year
-    df_x_test["month"] = df_x_test["time"].dt.month
-    df_x_test["day"] = df_x_test["time"].dt.day
-    df_x_test["hour"] = df_x_test["time"].dt.hour
+        # time 컬럼 제거
+        dfs[i].drop(columns=["time"], inplace=True)
 
-    # 주기성 피처 생성 (24시간 주기)
-    df_x_train["hour_sin"] = np.sin(2 * np.pi * df_x_train["hour"] / 24)
-    df_x_train["hour_cos"] = np.cos(2 * np.pi * df_x_train["hour"] / 24)
-    df_x_test["hour_sin"] = np.sin(2 * np.pi * df_x_test["hour"] / 24)
-    df_x_test["hour_cos"] = np.cos(2 * np.pi * df_x_test["hour"] / 24)
+        # 주기성 피처 생성 (24시간 주기)
+        dfs[i]["hour_sin"] = np.sin(2 * np.pi * dfs[i]["hour"] / 24)
+        dfs[i]["hour_cos"] = np.cos(2 * np.pi * dfs[i]["hour"] / 24)
 
-    # time 컬럼 제거
-    df_x_train.drop(columns=["time"], inplace=True)
-    df_x_test.drop(columns=["time"], inplace=True)
-
-    # 결측치 처리
-    df_x_train["log_return"].fillna(df_x_train["log_return"].mean(), inplace=True)
-    df_x_test["log_return"].fillna(df_x_test["log_return"].mean(), inplace=True)
-
-    # 이상치 처리
-    df_x_train["volume"] = df_x_train["volume"].apply(lambda x: 3000 if x > 3000 else x)
-    df_x_test["volume"] = df_x_test["volume"].apply(lambda x: 3000 if x > 3000 else x)
+        # 이상치 처리
+        # volume이 3000 이상인 데이터는 3000으로 대체
+        dfs[i]["volume"] = dfs[i]["volume"].apply(lambda x: 3000 if x > 3000 else x)
 
     # 스케일링을 위한 피쳐 분리
+
+    df_x_train = dfs[0]
+    df_x_valid = dfs[1]
+    df_x_test = dfs[2]
     features = df_x_train.columns
     features_without_volume = features.drop("volume")
 
     # 스케일링
+
+    # Standard 스케일링 적용 (volume을 제외한 모든 피쳐)
     scaler = StandardScaler()
     df_x_train[features_without_volume] = scaler.fit_transform(
         df_x_train[features_without_volume]
+    )
+    df_x_valid[features_without_volume] = scaler.transform(
+        df_x_valid[features_without_volume]
     )
     df_x_test[features_without_volume] = scaler.transform(
         df_x_test[features_without_volume]
@@ -122,183 +113,118 @@ def preprocess(
     df_x_train["volume"] = q_scaler.fit_transform(
         df_x_train["volume"].values.reshape(-1, 1)
     )
+    df_x_valid["volume"] = q_scaler.transform(
+        df_x_valid["volume"].values.reshape(-1, 1)
+    )
     df_x_test["volume"] = q_scaler.transform(df_x_test["volume"].values.reshape(-1, 1))
 
-    return df_x_train, df_x_test
+    return df_x_train, df_x_valid, df_x_test
 
 
 def split_data(
     df: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
-    # train:test = 8:2 로 분리
+    # train : valid : test = 60 : 20 : 20 으로 분리
     label = df["close"]
+    train_size = 0.6
+    valid_size = 0.2
     test_size = 0.2
 
-    # train:test = 8:2 로 분리. 시계열 데이터의 시간 순서는 중요하기 때문에 shuffle=False
-    x_train, x_test, y_train, y_test = train_test_split(
-        df, label, test_size=test_size, shuffle=False
+    # 쪼개어진 Train, Valid, Test 데이터의 비율은 (6:2:2), 내부 난수 값 42, 데이터를 쪼갤 때 섞으며 label 값으로 Stratify 하는 코드.
+    # 먼저 train과 temp로 분리 (6:4)
+    x_train, x_temp, y_train, y_temp = train_test_split(
+        df, label, test_size=(1 - train_size), random_state=42, shuffle=True
     )
+    # temp를 valid와 test로 분리 (6:2:2)
+    x_valid, x_test, y_valid, y_test = train_test_split(
+        x_temp,
+        y_temp,
+        test_size=(test_size / (test_size + valid_size)),
+        random_state=42,
+        shuffle=True,
+    )
+    return x_train, x_valid, x_test, y_train, y_valid, y_test
 
-    return x_train, x_test, y_train, y_test
 
-
-# XGBRegressor, RandomForestRegressor, LGBMRegressor
-def objective(trial, model_class, x_train: pd.DataFrame, y_train: pd.Series) -> float:
-    if model_class == XGBRegressor:
-        params = {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-            "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1, log=True),
-            "max_depth": trial.suggest_int("max_depth", 2, 10),
-            "subsample": trial.suggest_float("subsample", 0.5, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "gamma": trial.suggest_float("gamma", 0, 10),
-            "alpha": trial.suggest_float("alpha", 1, 10),
-            "lambda": trial.suggest_float("lambda", 1, 10),
-        }
-    elif model_class == RandomForestRegressor:
-        params = {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-            "max_depth": trial.suggest_int("max_depth", 2, 10),
-            "min_samples_split": trial.suggest_int("min_samples_split", 2, 10),
-            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
-        }
-    elif model_class == LGBMRegressor:
-        params = {
-            "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-            "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1, log=True),
-            "max_depth": trial.suggest_int("max_depth", 2, 10),
-            "num_leaves": trial.suggest_int("num_leaves", 20, 50),
-            "min_child_samples": trial.suggest_int("min_child_samples", 5, 20),
-            "reg_alpha": trial.suggest_float("alpha", 1, 10),
-            "reg_lambda": trial.suggest_float("lambda", 1, 10),
-        }
+def XGboostRegressor(x_train: pd.DataFrame, y_train: pd.Series) -> XGBRegressor:
+    # 모델 예측
+    # XGboost Regressor 를 사용하여 K-fold 교차검증 수행
+    # 모델 평가 지표 : MSE, R-squared
 
     val_scores_mse = []
     val_scores_r2 = []
-    tscv = TimeSeriesSplit(n_splits=3)
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
-    for trn_idx, val_idx in tscv.split(x_train):
+    for i, (trn_idx, val_idx) in enumerate(kf.split(x_train)):
         x_trn, y_trn = x_train.iloc[trn_idx], y_train.iloc[trn_idx]
         x_val, y_val = x_train.iloc[val_idx], y_train.iloc[val_idx]
 
-        model = model_class(**params)
+        # 전처리 (필요한 경우)
+        # x_trn, x_val, x_test = preprocess(x_trn, x_val, x_test)
 
-        if model_class == XGBRegressor:
-            model.fit(
-                x_trn,
-                y_trn,
-                eval_set=[(x_val, y_val)],
-                verbose=False,
-                early_stopping_rounds=10,
-            )
-        elif model_class == LGBMRegressor:
-            model.fit(x_trn, y_trn, eval_set=[(x_val, y_val)], eval_metric="rmse")
-        else:
-            model.fit(x_trn, y_trn)
+        # 모델 정의
+        model = XGBRegressor(
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=5,
+            random_state=42,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            eval_metric="rmse",
+            early_stopping_rounds=10,
+        )
 
+        # 모델 학습
+        model.fit(
+            x_trn,
+            y_trn,
+            eval_set=[(x_val, y_val)],
+            verbose=False,
+        )
+
+        # 예측
+        y_trn_pred = model.predict(x_trn)
         y_val_pred = model.predict(x_val)
+
+        # 훈련, 검증 데이터 평가
+        trn_mse = mean_squared_error(y_trn, y_trn_pred)
         val_mse = mean_squared_error(y_val, y_val_pred)
+        trn_r2 = r2_score(y_trn, y_trn_pred)
         val_r2 = r2_score(y_val, y_val_pred)
+
+        print(f"{i} Fold, train MSE: {trn_mse:.4f}, validation MSE: {val_mse:.4f}")
+        print(
+            f"{i} Fold, train R-squared: {trn_r2:.4f}, validation R-squared: {val_r2:.4f}"
+        )
 
         val_scores_mse.append(val_mse)
         val_scores_r2.append(val_r2)
 
-    mean_mse = np.mean(val_scores_mse)
-    mean_r2 = np.mean(val_scores_r2)
+    # 교차 검증 성능 평균 계산하기
+    print("Cross Validation Score of MSE: {:.4f}".format(np.mean(val_scores_mse)))
+    print("Cross Validation Score of R-squared: {:.4f}".format(np.mean(val_scores_r2)))
 
-    trial.set_user_attr("mean_mse", mean_mse)
-    trial.set_user_attr("mean_r2", mean_r2)
-
-    return mean_mse
-
-
-# 로깅 콜백 클래스 정의
-class LoggingCallback:
-    def __init__(self, n_trials: int):
-        self.n_trials = n_trials
-
-    def __call__(self, study, trial):
-        trial_number = trial.number + 1
-        print(
-            f"Trial {trial_number}/{self.n_trials} completed. Best value (min MSE): {study.best_value:.4f}"
-        )
-
-
-# 튜닝 함수
-def tune_model(model_class, x_train, y_train, n_trials=30):
-    study = optuna.create_study(direction="minimize")  # MSE 최소화
-    logging_callback = LoggingCallback(n_trials)  # 로깅 콜백 설정
-    study.optimize(
-        lambda trial: objective(trial, model_class, x_train, y_train),
-        n_trials=n_trials,
-        callbacks=[logging_callback],
-    )
-    best_params = study.best_trial.params
-    best_model = model_class(**best_params)
-    best_model.fit(x_train, y_train)
-    return best_model
-
-
-# OOF 앙상블 예측 함수
-def oof_predict(
-    models: List[Any], x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Series
-) -> Tuple[np.ndarray, np.ndarray]:
-    tscv = TimeSeriesSplit(n_splits=3)
-    oof_train = np.zeros((x_train.shape[0], len(models)))
-    oof_test = np.zeros((x_test.shape[0], len(models)))
-    oof_test_skf = np.empty((3, x_test.shape[0], len(models)))
-
-    for i, model in enumerate(models):
-        for j, (train_idx, val_idx) in enumerate(tscv.split(x_train)):
-            x_trn, y_trn = x_train.iloc[train_idx], y_train.iloc[train_idx]
-            x_val, y_val = x_train.iloc[val_idx], y_train.iloc[val_idx]
-
-            model.fit(x_trn, y_trn)
-            oof_train[val_idx, i] = model.predict(x_val)
-            oof_test_skf[j, :, i] = model.predict(x_test)
-
-        oof_test[:, i] = oof_test_skf[:, :, i].mean(axis=0)
-
-    return oof_train, oof_test
+    return model
 
 
 # 메인으로 실행 될 함수
 def predict() -> None:
     # 데이터 분리 함수 호출
-    start_time = time.time()
-    x_train, x_test, y_train, y_test = split_data(df)
+    x_train, x_valid, x_test, y_train, y_valid, y_test = split_data(df)
 
     # 데이터 전처리
-    x_train, x_test = preprocess(x_train, x_test)
+    x_train, x_valid, x_test = preprocess(x_train, x_valid, x_test)
+    print(x_train.columns)
 
-    n_trials = 10  # 시도 횟수
-    logging_callback = LoggingCallback(n_trials)  # 로깅 콜백 설정
+    # 모델 학습
+    model = XGboostRegressor(x_train, y_train)
 
-    models = {
-        "XGB": XGBRegressor,
-        "RandomForest": RandomForestRegressor,
-        "LGBM": LGBMRegressor,
-    }
-
-    tuned_models = []
-    for model_name, model_class in models.items():
-        print(f"Tuning {model_name}...")
-        tuned_model = tune_model(model_class, x_train, y_train, n_trials)
-        tuned_models.append(tuned_model)
-        print(f"Best parameters for {model_name}: {tuned_model.get_params()}")
-
-    # Out-of-Fold 앙상블
-    oof_train, oof_test = oof_predict(tuned_models, x_train, x_test, y_train)
-
-    # 앙상블 예측
-    ensemble_preds = oof_test.mean(axis=1)
+    # 테스트 데이터에 대한 예측
+    y_test_pred = model.predict(x_test)
 
     # 성능 평가
-    test_mse = mean_squared_error(y_test, ensemble_preds)
-    test_r2 = r2_score(y_test, ensemble_preds)
+    test_mse = mean_squared_error(y_test, y_test_pred)
+    test_r2 = r2_score(y_test, y_test_pred)
 
-    print(f"Ensemble Test Mean Squared Error: {test_mse:.4f}")
-    print(f"Ensemble Test R-squared: {test_r2:.4f}")
-
-    elapsed_time = time.time() - start_time
-    print(f"Elapsed time for modeling task: {elapsed_time:.2f} seconds")
+    print(f"Test Mean Squared Error: {test_mse:.4f}")
+    print(f"Test R-squared: {test_r2:.4f}")
