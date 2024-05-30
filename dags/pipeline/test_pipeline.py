@@ -7,6 +7,7 @@ from dags.module.api.save_raw_data import save_raw_data_from_API_fn
 from module.email_tasks import get_success_email_operator, get_failure_email_operator
 from airflow.utils.trigger_rule import TriggerRule
 from dags.module.api.preprocess import preprocess_data_fn
+from dags.module.api.classification import train_catboost_model_fn
 
 
 @dag(
@@ -41,14 +42,33 @@ def test_pipeline():
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
+    train_model_task = PythonOperator(
+        task_id="train_catboost_model_fn",
+        python_callable=train_catboost_model_fn,
+        trigger_rule=TriggerRule.ALL_DONE,
+    )
+
     end_task = EmptyOperator(task_id="end_task", trigger_rule=TriggerRule.ALL_DONE)
 
     success_email = get_success_email_operator(to_email="raphdoh@naver.com")
     failure_email = get_failure_email_operator(to_email="raphdoh@naver.com")
 
-    start_task >> create_table_task >> save_data_task >> preprocess_task >> end_task
+    (
+        start_task
+        >> create_table_task
+        >> save_data_task
+        >> preprocess_task
+        >> train_model_task
+        >> end_task
+    )
     end_task >> success_email
-    [create_table_task, save_data_task, preprocess_task, end_task] >> failure_email
+    [
+        create_table_task,
+        save_data_task,
+        preprocess_task,
+        train_model_task,
+        end_task,
+    ] >> failure_email
 
 
 test_pipeline()
