@@ -1,20 +1,14 @@
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.experimental import enable_iterative_imputer
-from sklearn.impute import IterativeImputer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.compose import ColumnTransformer
 from sklearn.metrics import f1_score
-from sklearn.pipeline import Pipeline
 from sklearn.datasets import load_iris
 import optuna
 from optuna.storages import RDBStorage
 import mlflow
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
-from dags.module.info.connections import Connections
+from info.connections import Connections
 
 # def train_fn(**context):
 #     mlflow.set_experiment("hospital_model")

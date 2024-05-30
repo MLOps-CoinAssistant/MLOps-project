@@ -1,5 +1,5 @@
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from dags.module.info.connections import Connections
+from info.connections import Connections
 import pandas as pd
 from pandas import DataFrame
 

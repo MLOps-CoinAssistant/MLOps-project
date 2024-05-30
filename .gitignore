@@ -2,8 +2,8 @@
 .env
 .DS_Store
 airflow_settings.yaml
-# compose.yaml
-# mlflow-compose.yaml
+compose.yaml
+mlflow-compose.yaml
 __pycache__/
 astro
 .venv
@@ -15,3 +15,6 @@ airflow.db
 df_btc_ohlc.csv
 /home/ubuntu/MLOps-project/upbit_api
 asdf.py
+.ipynb_checkpoints/
+*.ipynb
+catboost_info

@@ -1,14 +1,13 @@
 import logging
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from dags.module.info.connections import Connections
-from dags.module.info.api import APIInformation
+from info.connections import Connections
+from info.api import APIInformation
 from sqlalchemy import (
     create_engine,
     MetaData,
     Table,
     Column,
     String,
-    Integer,
     Text,
     DateTime,
 )
@@ -18,9 +17,8 @@ import requests
 import hashlib
 from tenacity import retry, stop_after_attempt, wait_fixed
 from requests.exceptions import HTTPError
-from typing import Callable, Dict, List, Set, Optional
-from sqlalchemy.engine import Engine, Connection
-
+from typing import Callable, Dict, List, Set
+from sqlalchemy.engine import Engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
