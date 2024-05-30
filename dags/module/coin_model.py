@@ -51,17 +51,15 @@ with Session(bind=engine) as session:
     # 쿼리 실행 및 결과를 pandas 데이터프레임으로 변환
     result = session.execute(query)
     df = pd.DataFrame(result.all(), columns=result.keys())
-    session.commit()
 
 
 def preprocess(
-    x_train: pd.DataFrame, x_valid: pd.DataFrame, x_test: pd.DataFrame
+    x_train: pd.DataFrame, x_test: pd.DataFrame
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     df_x_train = x_train.copy()
-    df_x_valid = x_valid.copy()
     df_x_test = x_test.copy()
 
-    dfs = [df_x_train, df_x_valid, df_x_test]
+    dfs = [df_x_train, df_x_test]
     periods = ["year", "month", "day", "hour"]
 
     for i in range(len(dfs)):
@@ -87,8 +85,7 @@ def preprocess(
     # 스케일링을 위한 피쳐 분리
 
     df_x_train = dfs[0]
-    df_x_valid = dfs[1]
-    df_x_test = dfs[2]
+    df_x_test = dfs[1]
     features = df_x_train.columns
     features_without_volume = features.drop("volume")
 
@@ -98,9 +95,6 @@ def preprocess(
     scaler = StandardScaler()
     df_x_train[features_without_volume] = scaler.fit_transform(
         df_x_train[features_without_volume]
-    )
-    df_x_valid[features_without_volume] = scaler.transform(
-        df_x_valid[features_without_volume]
     )
     df_x_test[features_without_volume] = scaler.transform(
         df_x_test[features_without_volume]
@@ -113,37 +107,24 @@ def preprocess(
     df_x_train["volume"] = q_scaler.fit_transform(
         df_x_train["volume"].values.reshape(-1, 1)
     )
-    df_x_valid["volume"] = q_scaler.transform(
-        df_x_valid["volume"].values.reshape(-1, 1)
-    )
     df_x_test["volume"] = q_scaler.transform(df_x_test["volume"].values.reshape(-1, 1))
 
-    return df_x_train, df_x_valid, df_x_test
+    return df_x_train, df_x_test
 
 
 def split_data(
     df: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
-    # train : valid : test = 60 : 20 : 20 으로 분리
+    # train : test = 8:2 으로 분리
     label = df["close"]
-    train_size = 0.6
-    valid_size = 0.2
-    test_size = 0.2
 
     # 쪼개어진 Train, Valid, Test 데이터의 비율은 (6:2:2), 내부 난수 값 42, 데이터를 쪼갤 때 섞으며 label 값으로 Stratify 하는 코드.
-    # 먼저 train과 temp로 분리 (6:4)
-    x_train, x_temp, y_train, y_temp = train_test_split(
-        df, label, test_size=(1 - train_size), random_state=42, shuffle=True
+    # train과 test 8:2로 분리 (8:2)
+    x_train, x_test, y_train, y_test = train_test_split(
+        df, label, test_size=0.2, random_state=42, shuffle=True
     )
-    # temp를 valid와 test로 분리 (6:2:2)
-    x_valid, x_test, y_valid, y_test = train_test_split(
-        x_temp,
-        y_temp,
-        test_size=(test_size / (test_size + valid_size)),
-        random_state=42,
-        shuffle=True,
-    )
-    return x_train, x_valid, x_test, y_train, y_valid, y_test
+
+    return x_train, x_test, y_train, y_test
 
 
 def XGboostRegressor(x_train: pd.DataFrame, y_train: pd.Series) -> XGBRegressor:
@@ -210,10 +191,10 @@ def XGboostRegressor(x_train: pd.DataFrame, y_train: pd.Series) -> XGBRegressor:
 # 메인으로 실행 될 함수
 def predict() -> None:
     # 데이터 분리 함수 호출
-    x_train, x_valid, x_test, y_train, y_valid, y_test = split_data(df)
+    x_train, x_test, y_train, y_test = split_data(df)
 
     # 데이터 전처리
-    x_train, x_valid, x_test = preprocess(x_train, x_valid, x_test)
+    x_train, x_test = preprocess(x_train, x_test)
     print(x_train.columns)
 
     # 모델 학습
