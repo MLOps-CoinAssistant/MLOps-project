@@ -27,6 +27,9 @@ from sqlalchemy.inspection import inspect
 from typing import Optional, Tuple, Dict, List
 import pandas as pd
 import numpy as np
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from dags.module.info.connections import Connections
+from dags.module.info.api import APIInformation
 import requests
 import logging
 import os
@@ -51,7 +54,6 @@ class BtcOhlcv(Base):
 postgres_hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
 engine = create_engine(postgres_hook.get_uri())
 session_local = sessionmaker(bind=engine)
-
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -792,7 +794,7 @@ async def collect_and_load_data():
                     loop.run_in_executor(
                         executor,
                         functools.partial(
-                            fetch_data_for_period_sync,
+                            fetch_ohlcv_data,
                             date_range[0].strftime("%Y-%m-%dT%H:%M:%S"),
                             date_range[1].strftime("%Y-%m-%dT%H:%M:%S"),
                         ),
@@ -813,8 +815,3 @@ def collect_and_load_data_sync():
 def run_upbit_api_call_event_loop_policy_sync():
     uvloop.install()
     asyncio.run(collect_and_load_data_sync())
-    import xgboost as xgb
-    import catboost as cb
-
-    logger.info("xgb version: {}".format(xgb.__version__))
-    logger.info("catboost version: {}".format(cb.__version__))
