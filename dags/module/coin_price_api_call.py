@@ -6,6 +6,9 @@ import jwt
 import uuid
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from info.connections import Connections
+from info.api import APIInformation
 from sqlalchemy import (
     create_engine,
     Column,
