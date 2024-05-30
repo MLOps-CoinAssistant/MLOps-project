@@ -27,9 +27,6 @@ from sqlalchemy.inspection import inspect
 from typing import Optional, Tuple, Dict, List
 import pandas as pd
 import numpy as np
-from airflow.providers.postgres.hooks.postgres import PostgresHook
-from dags.module.info.connections import Connections
-from dags.module.info.api import APIInformation
 import requests
 import logging
 import os
@@ -815,3 +812,8 @@ def collect_and_load_data_sync():
 def run_upbit_api_call_event_loop_policy_sync():
     uvloop.install()
     asyncio.run(collect_and_load_data_sync())
+    import xgboost as xgb
+    import catboost as cb
+
+    logger.info("xgb version: {}".format(xgb.__version__))
+    logger.info("catboost version: {}".format(cb.__version__))

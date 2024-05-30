@@ -1,5 +1,5 @@
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from dags.module.info.connections import Connections
+from info.connections import Connections
 from sqlalchemy import create_engine, text
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error

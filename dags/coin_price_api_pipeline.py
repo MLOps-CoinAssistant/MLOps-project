@@ -1,12 +1,11 @@
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from module.coin_price_api_call import collect_and_load_data
+from module.coin_price_api_call import collect_and_load_data_sync
 from module.coin_model import predict
 from datetime import datetime, timedelta
 
 
-# Airflow DAG를 정의합니다.
 @dag(
     schedule_interval="2 * * * *",  # 매 시간 2분에 실행
     start_date=datetime(2024, 5, 15),
@@ -16,11 +15,10 @@ from datetime import datetime, timedelta
         "retries": 3,
         "retry_delay": timedelta(minutes=3),
         "execution_timeout": timedelta(minutes=5),
-    },  # 태스크 시간 제한 설정},
+    },  # 태스크 시간 제한 설정
     tags=["upbit_to_cloudsql"],
 )
 def coin_price_api_pipeline():
-    # 데이터 수집 및 적재 작업을 정의하고 Airflow DAG에 추가합니다.
     start_task = EmptyOperator(task_id="start_task")
     task_collect_and_load_data = PythonOperator(
         task_id="collect_and_load_data",
@@ -32,7 +30,6 @@ def coin_price_api_pipeline():
     )
     end_task = EmptyOperator(task_id="end_task")
 
-    # 작업 순서를 정의합니다.
     start_task >> task_collect_and_load_data >> task_XGboostRegressor >> end_task
 
 
