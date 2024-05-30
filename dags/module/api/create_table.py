@@ -19,7 +19,6 @@ class BtcOhlcv(Base):
     low = Column(Integer)
     close = Column(Integer)
     volume = Column(Integer)
-    label = Column(Integer)
 
 
 def create_table_fn(

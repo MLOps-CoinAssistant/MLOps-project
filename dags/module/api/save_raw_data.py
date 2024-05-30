@@ -105,7 +105,6 @@ async def insert_data_into_db(data: list, db_uri: str) -> None:
                     low=record["low_price"],
                     close=record["trade_price"],
                     volume=record["candle_acc_trade_volume"],
-                    label=0,  # 레이블은 필요에 따라 수정
                 )
                 .on_conflict_do_update(
                     index_elements=["time"],
@@ -115,7 +114,6 @@ async def insert_data_into_db(data: list, db_uri: str) -> None:
                         "low": record["low_price"],
                         "close": record["trade_price"],
                         "volume": record["candle_acc_trade_volume"],
-                        "label": 0,  # 레이블은 필요에 따라 수정
                     },
                 )
             )
@@ -168,7 +166,7 @@ def get_most_recent_data_time(db_uri: str) -> datetime:
 
 
 # 데이터를 수집하고 데이터베이스에 적재하며, 365일이 지난 데이터를 삭제하는 함수
-async def collect_and_load_data(db_uri: str) -> None:
+async def collect_and_load_data(db_uri: str, context: dict) -> None:
     async with aiohttp.ClientSession() as session:
         most_recent_time = get_most_recent_data_time(db_uri)
         current_time = datetime.now() + timedelta(hours=9)
@@ -213,6 +211,11 @@ async def collect_and_load_data(db_uri: str) -> None:
         await insert_data_into_db(data, db_uri)
         await delete_old_data(db_uri)
 
+        # 새로운 데이터의 시간을 XCom에 푸시
+        if data:
+            last_record_time = datetime.fromisoformat(data[-1]["candle_date_time_kst"])
+            context["ti"].xcom_push(key="new_time", value=last_record_time.isoformat())
+
 
 # Airflow Task에서 호출될 함수
 def save_raw_data_from_API_fn(**context) -> None:
@@ -226,6 +229,6 @@ def save_raw_data_from_API_fn(**context) -> None:
         logger.info(
             "Table created or already exists, starting data collection and load process."
         )
-        asyncio.run(collect_and_load_data(db_uri))
+        asyncio.run(collect_and_load_data(db_uri, context))
     else:
         logger.info("Table not created and data collection and load process skipped.")
