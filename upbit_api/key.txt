@@ -1,0 +1,2 @@
+access_key = yX0KRIG7nh6mpsMjSmzSudVBozU9xnwuQMdif7Be
+secret_key = k3Z3nEIvdBhqh7g8CtyAI8jfKsQsFY1GHqxOaPAE
