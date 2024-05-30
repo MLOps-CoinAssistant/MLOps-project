@@ -2,7 +2,7 @@ from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from pendulum import datetime
-from module import example_train
+from dags.module.example import example_train
 
 
 @dag(
@@ -13,7 +13,7 @@ from module import example_train
     default_args={"owner": "Astro", "retries": 3},
     tags=["example"],
 )
-def ml_pipeline() -> None:
+def example_ml_pipeline() -> None:
     start_task: EmptyOperator = EmptyOperator(task_id="start_task")
 
     train_iris_task: PythonOperator = PythonOperator(
@@ -39,4 +39,4 @@ def ml_pipeline() -> None:
     train_iris_task >> iris_model_create_task >> iris_model_transition_task
 
 
-ml_pipeline()
+example_ml_pipeline()

@@ -14,7 +14,7 @@ from typing import Optional, Tuple, Dict, List
 import logging
 import os
 from info.api import APIInformation
-from dags.module.api.create_table import BtcOhlcv, Base
+from dags.module.upbit_price_prediction.btc.create_table import BtcOhlcv, Base
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)

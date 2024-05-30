@@ -2,16 +2,23 @@ from datetime import datetime, timedelta
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from dags.module.api.create_table import create_table_fn
-from dags.module.api.save_raw_data import save_raw_data_from_API_fn
-from module.email_tasks import get_success_email_operator, get_failure_email_operator
+from dags.module.upbit_price_prediction.btc.create_table import create_table_fn
+from dags.module.upbit_price_prediction.btc.save_raw_data import (
+    save_raw_data_from_API_fn,
+)
+from dags.module.email_tasks import (
+    get_success_email_operator,
+    get_failure_email_operator,
+)
 from airflow.utils.trigger_rule import TriggerRule
-from dags.module.api.preprocess import preprocess_data_fn
-from dags.module.api.classification import train_catboost_model_fn
+from dags.module.upbit_price_prediction.btc.preprocess import preprocess_data_fn
+from dags.module.upbit_price_prediction.btc.classification import (
+    train_catboost_model_fn,
+)
 
 
 @dag(
-    schedule_interval="0 * * * *",  # 매 시간 실행
+    schedule_interval="2 * * * *",  # 매 시간 실행
     start_date=datetime(2024, 5, 30),
     catchup=True,  # 이전 실행은 무시합니다.
     default_args={
@@ -22,7 +29,7 @@ from dags.module.api.classification import train_catboost_model_fn
     },
     tags=["upbit pipeline"],
 )
-def test_pipeline():
+def btc_price_prediction_pipeline():
     start_task = EmptyOperator(task_id="start_task")
 
     create_table_task = PythonOperator(
@@ -71,4 +78,4 @@ def test_pipeline():
     ] >> failure_email
 
 
-test_pipeline()
+btc_price_prediction_pipeline()

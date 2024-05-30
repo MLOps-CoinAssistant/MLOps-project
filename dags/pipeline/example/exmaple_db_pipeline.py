@@ -2,7 +2,7 @@ from airflow.decorators import dag
 from pendulum import datetime
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
-from module import example_db
+from dags.module.example import example_db
 
 
 @dag(
@@ -13,7 +13,7 @@ from module import example_db
     default_args={"owner": "Astro", "retries": 3},
     tags=["postgresql", "db"],
 )
-def db_pipeline() -> None:
+def example_db_pipeline() -> None:
     start_task: EmptyOperator = EmptyOperator(task_id="start_task")
 
     get_KRW_BTC_data: PythonOperator = PythonOperator(
@@ -26,4 +26,4 @@ def db_pipeline() -> None:
     start_task >> get_KRW_BTC_data >> end_task
 
 
-db_pipeline()
+example_db_pipeline()
