@@ -1,7 +1,8 @@
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from module.coin_price_api_call import collect_and_load_data_sync
+from module.coin_price_api_call import collect_and_load_data
+from module.coin_model import predict
 from datetime import datetime, timedelta
 
 
@@ -25,11 +26,14 @@ def coin_price_api_pipeline():
         task_id="collect_and_load_data",
         python_callable=collect_and_load_data_sync,
     )
-
+    task_XGboostRegressor = PythonOperator(
+        task_id="predict",
+        python_callable=predict,
+    )
     end_task = EmptyOperator(task_id="end_task")
 
     # 작업 순서를 정의합니다.
-    start_task >> task_collect_and_load_data >> end_task
+    start_task >> task_collect_and_load_data >> task_XGboostRegressor >> end_task
 
 
 # DAG를 생성합니다.
