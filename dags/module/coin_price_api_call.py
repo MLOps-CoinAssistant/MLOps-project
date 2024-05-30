@@ -52,6 +52,7 @@ postgres_hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value
 engine = create_engine(postgres_hook.get_uri())
 session_local = sessionmaker(bind=engine)
 
+
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
