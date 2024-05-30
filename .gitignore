@@ -12,6 +12,9 @@ webserver_config.py
 airflow.cfg
 airflow.db
 .idea
+df_btc_ohlc.csv
+/home/ubuntu/MLOps-project/upbit_api
+asdf.py
 .ipynb_checkpoints/
 *.ipynb
 catboost_info
