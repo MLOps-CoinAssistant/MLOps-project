@@ -4,6 +4,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
 from dags.module.backup import coin_news_api_call
 from dags.module import email_tasks
+from airflow.models import Variable
 
 
 @dag(
@@ -29,8 +30,9 @@ def coin_news_api_pipeline() -> None:
     end_task: EmptyOperator = EmptyOperator(task_id="end_task")
 
     # 이메일 태스크 추가
-    success_email = email_tasks.get_success_email_operator(to_email="raphdoh@naver.com")
-    failure_email = email_tasks.get_failure_email_operator(to_email="raphdoh@naver.com")
+    email_addr = Variable.get("email_addr")
+    success_email = email_tasks.get_success_email_operator(to_email=email_addr)
+    failure_email = email_tasks.get_failure_email_operator(to_email=email_addr)
 
     start_task >> create_db_task >> clear_and_save_news_task >> end_task
     end_task >> success_email

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from airflow.models import Variable
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
@@ -57,8 +58,9 @@ def btc_price_prediction_pipeline():
 
     end_task = EmptyOperator(task_id="end_task", trigger_rule=TriggerRule.ALL_DONE)
 
-    success_email = get_success_email_operator(to_email="raphdoh@naver.com")
-    failure_email = get_failure_email_operator(to_email="raphdoh@naver.com")
+    email_addr = Variable.get("email_addr")
+    success_email = get_success_email_operator(to_email=email_addr)
+    failure_email = get_failure_email_operator(to_email=email_addr)
 
     (
         start_task
@@ -69,6 +71,7 @@ def btc_price_prediction_pipeline():
         >> end_task
     )
     end_task >> success_email
+
     [
         create_table_task,
         save_data_task,
