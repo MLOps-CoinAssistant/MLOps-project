@@ -1,3 +1,3 @@
-from . import example_train, example_db, coin_news_api_call
+from . import email_tasks
 
-all = ["example_train", "example_db", "coin_news_api_call"]
+all = ["get_failure_email_operator", "get_success_email_operator"]

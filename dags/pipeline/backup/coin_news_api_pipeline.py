@@ -2,7 +2,8 @@ from airflow.decorators import dag
 from pendulum import datetime
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
-from module import coin_news_api_call, email_tasks
+from dags.module.backup import coin_news_api_call
+from dags.module import email_tasks
 
 
 @dag(
