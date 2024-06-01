@@ -2,8 +2,8 @@ version: '3.4'
 
 x-common-env-vars: &common-env-vars
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
-  AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql://postgres:postgres@postgres:5432
-  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://postgres:postgres@postgres:5432
+  AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql://postgres:@:5432
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://postgres:l@:5432
   AIRFLOW__CORE__LOAD_EXAMPLES: "False"
   AIRFLOW__CORE__FERNET_KEY: "d6Vefz3G9U_ynXB3cr7y_Ak35tAHkEGAVxuz_B-jzWw="
   AIRFLOW__WEBSERVER__SECRET_KEY: "ml-ops-project_c92c7b"
@@ -31,31 +31,12 @@ networks:
     driver: bridge
 
 volumes:
-  # postgres_data:
-  #   driver: local
   airflow_logs:
     driver: local
 
 services:
-  # postgres:
-  #   image: docker.io/postgres:12.6
-  #   restart: unless-stopped
-  #   networks:
-  #     - airflow
-  #   labels:
-  #     io.astronomer.docker: "true"
-  #     io.astronomer.docker.cli: "true"
-  #   ports:
-  #     - 127.0.0.1:5432:5432
-  #   volumes:
-
-  #     - postgres_data:/var/lib/postgresql/data
-
-  #   environment:
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: postgres
-
   scheduler:
+    build: .
     image: ml-ops-project_c92c7b/airflow:latest
     command: >
       bash -c "(airflow db upgrade || airflow upgradedb) && airflow scheduler"
@@ -67,26 +48,22 @@ services:
       io.astronomer.docker: "true"
       io.astronomer.docker.cli: "true"
       io.astronomer.docker.component: "airflow-scheduler"
-    # depends_on:
-    #   - postgres
     environment: *common-env-vars
     volumes:
       - /home/ubuntu/MLOps-project/dags:/usr/local/airflow/dags:z
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z
       - /home/ubuntu/MLOps-project/include:/usr/local/airflow/include:z
       - /home/ubuntu/MLOps-project/tests:/usr/local/airflow/tests:z
-
       - /home/ubuntu/MLOps-project/airflow_settings.yaml:/usr/local/airflow/airflow_settings.yaml:z
-
-
       - airflow_logs:/usr/local/airflow/logs
-
+      - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 
 
   webserver:
+    build: .
     image: ml-ops-project_c92c7b/airflow:latest
     command: >
       bash -c 'if [[ -z "$$AIRFLOW__API__AUTH_BACKEND" ]] && [[ $$(pip show -f apache-airflow | grep basic_auth.py) ]];
@@ -105,9 +82,7 @@ services:
       io.astronomer.docker.component: "airflow-webserver"
     depends_on:
       - scheduler
-      # - postgres
     environment: *common-env-vars
-
     ports:
       - 127.0.0.1:8080:8080
     volumes:
@@ -115,8 +90,8 @@ services:
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z
       - /home/ubuntu/MLOps-project/include:/usr/local/airflow/include:z
       - /home/ubuntu/MLOps-project/tests:/usr/local/airflow/tests:z
-
       - airflow_logs:/usr/local/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
 
     healthcheck:
       test: curl --fail http://webserver:8080/health || exit 1
@@ -130,6 +105,7 @@ services:
 
 
   triggerer:
+    build: .
     image: ml-ops-project_c92c7b/airflow:latest
     command: >
       bash -c "(airflow db upgrade || airflow upgradedb) && airflow triggerer"
@@ -141,15 +117,14 @@ services:
       io.astronomer.docker: "true"
       io.astronomer.docker.cli: "true"
       io.astronomer.docker.component: "airflow-triggerer"
-    # depends_on:
-    #   - postgres
+
     environment: *common-env-vars
     volumes:
       - /home/ubuntu/MLOps-project/dags:/usr/local/airflow/dags:z
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z
       - /home/ubuntu/MLOps-project/include:/usr/local/airflow/include:z
-
       - airflow_logs:/usr/local/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
