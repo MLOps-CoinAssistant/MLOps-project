@@ -1,0 +1,5 @@
+apache-airflow-providers-postgres==5.10.2
+apache-airflow-providers-docker==3.11.0
+scikit-learn==1.4.1.post1
+mlflow==1.27.0
+optuna==3.6.1
