@@ -1,8 +1,10 @@
 from airflow.decorators import dag
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.docker.operators.docker import DockerOperator
 from airflow.operators.empty import EmptyOperator
 from datetime import datetime, timedelta
 from docker.types import Mount
+from info.connections import Connections
 
 default_args = {
     "owner": "airflow",
@@ -22,6 +24,14 @@ default_args = {
 def ml_pipeline_docker() -> None:
     start_task: EmptyOperator = EmptyOperator(task_id="start_task")
 
+    # PostgreSQL 연결 정보 가져오기
+    postgres_hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
+    conn_uri = postgres_hook.get_uri()
+    env_vars = {
+        "AIRFLOW__CORE__SQL_ALCHEMY_CONN": conn_uri,
+        "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": conn_uri,
+    }
+
     train_iris_task: DockerOperator = DockerOperator(
         task_id="train_iris_task",
         image="ml-ops-project_c92c7b/airflow:latest",  # 빌드한 이미지 사용
@@ -37,6 +47,7 @@ def ml_pipeline_docker() -> None:
                 type="bind",
             )
         ],
+        environment=env_vars,
     )
 
     iris_model_create_task: DockerOperator = DockerOperator(
@@ -54,6 +65,7 @@ def ml_pipeline_docker() -> None:
                 type="bind",
             )
         ],
+        environment=env_vars,
     )
 
     iris_model_transition_task: DockerOperator = DockerOperator(
@@ -71,6 +83,7 @@ def ml_pipeline_docker() -> None:
                 type="bind",
             )
         ],
+        environment=env_vars,
     )
 
     end_task: EmptyOperator = EmptyOperator(task_id="end_task")
