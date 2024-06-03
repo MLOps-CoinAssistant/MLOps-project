@@ -25,7 +25,7 @@ def train_catboost_model_fn(
     ),
     **context: dict,
 ) -> None:
-    study_and_experiment_name = "btc_catboost_model_test"
+    study_and_experiment_name = "btc_catboost_alpha"
     mlflow.set_experiment(study_and_experiment_name)
     experiment = mlflow.get_experiment_by_name(study_and_experiment_name)
     experiment_id = experiment.experiment_id
@@ -128,6 +128,7 @@ def train_catboost_model_fn(
             logger.error(f"Model registration failed: {str(e)}")
             raise
 
+        context["ti"].xcom_push(key="model_name", value=study_and_experiment_name)
         context["ti"].xcom_push(key="run_id", value=run.info.run_id)
         context["ti"].xcom_push(key="model_uri", value=model_uri)
         context["ti"].xcom_push(key="eval_metric", value="f1_score")
@@ -139,7 +140,8 @@ def train_catboost_model_fn(
         )
 
 
-def create_model_version(model_name: str, **context: dict) -> None:
+def create_model_version(**context: dict) -> None:
+    model_name: str = context["ti"].xcom_pull(key="model_name")
     run_id = context["ti"].xcom_pull(key="run_id")
     model_uri = context["ti"].xcom_pull(key="model_uri")
     eval_metric = context["ti"].xcom_pull(key="eval_metric")
@@ -160,7 +162,8 @@ def create_model_version(model_name: str, **context: dict) -> None:
     logger.info(f"Model version created: {model_version.version}")
 
 
-def transition_model_stage(model_name: str, **context: dict) -> None:
+def transition_model_stage(**context: dict) -> None:
+    model_name: str = context["ti"].xcom_pull(key="model_name")
     version = context["ti"].xcom_pull(key="model_version")
     eval_metric = context["ti"].xcom_pull(key="eval_metric")
     client = MlflowClient()

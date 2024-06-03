@@ -15,6 +15,8 @@ from airflow.utils.trigger_rule import TriggerRule
 from dags.module.upbit_price_prediction.btc.preprocess import preprocess_data_fn
 from dags.module.upbit_price_prediction.btc.classification import (
     train_catboost_model_fn,
+    create_model_version,
+    transition_model_stage,
 )
 
 
@@ -56,6 +58,18 @@ def btc_price_prediction_pipeline():
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
+    create_model_task: PythonOperator = PythonOperator(
+        task_id="create_model_task_fn",
+        python_callable=create_model_version,
+        trigger_rule=TriggerRule.ALL_DONE,
+    )
+
+    transition_model_task: PythonOperator = PythonOperator(
+        task_id="transition_model_task_fn",
+        python_callable=transition_model_stage,
+        trigger_rule=TriggerRule.ALL_DONE,
+    )
+
     end_task = EmptyOperator(task_id="end_task", trigger_rule=TriggerRule.ALL_DONE)
 
     email_addr = Variable.get("email_addr")
@@ -68,6 +82,8 @@ def btc_price_prediction_pipeline():
         >> save_data_task
         >> preprocess_task
         >> train_model_task
+        >> create_model_task
+        >> transition_model_task
         >> end_task
     )
     end_task >> success_email
@@ -77,6 +93,8 @@ def btc_price_prediction_pipeline():
         save_data_task,
         preprocess_task,
         train_model_task,
+        create_model_task,
+        transition_model_task,
         end_task,
     ] >> failure_email
 
