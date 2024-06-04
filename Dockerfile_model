@@ -1,0 +1,46 @@
+FROM python:3.11.9-slim
+
+USER root
+
+# Install prerequisites
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+# Create the keyrings directory
+RUN mkdir -p /etc/apt/keyrings
+
+# Add Docker’s official GPG key
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Set up the Docker repository for Debian
+RUN echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+# Update the package database again to include Docker packages
+RUN apt-get update
+
+# Install Docker CLI
+RUN apt-get install -y docker-ce-cli
+
+WORKDIR /app
+
+COPY requirements_classification.txt /app/requirements_classification.txt
+COPY requirements_preprocess.txt /app/requirements_preprocess.txt
+COPY requirements_save_raw_data.txt /app/requirements_save_raw_data.txt
+
+COPY dags/module/upbit_price_prediction/btc/classification.py /app/classification.py
+COPY dags/module/upbit_price_prediction/btc/create_table.py /app/create_table.py
+COPY dags/module/upbit_price_prediction/btc/preprocess.py /app/preprocess.py
+COPY dags/module/upbit_price_prediction/btc/save_raw_data.py /app/save_raw_data.py
+
+COPY run_task.sh /app/run_task.sh
+
+RUN chmod +x /app/run_task.sh
+
+USER astro
+
+ENTRYPOINT ["/app/run_task.sh"]
