@@ -11,6 +11,8 @@ import mlflow
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
 from info.connections import Connections
+from datetime import datetime
+
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +25,11 @@ def train_catboost_model_fn(
     ),
     **context: dict,
 ) -> None:
-    mlflow.set_experiment("btc_catboost_model")
+    study_and_experiment_name = "btc_catboost_alpha"
+    mlflow.set_experiment(study_and_experiment_name)
+    experiment = mlflow.get_experiment_by_name(study_and_experiment_name)
+    experiment_id = experiment.experiment_id
+    run_name = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     # 데이터 로드
     engine = create_engine(hook.get_uri())
@@ -71,9 +77,8 @@ def train_catboost_model_fn(
         postgres_conn_id=Connections.HYPERPARAMETER_STORE.value
     )
     storage: RDBStorage = RDBStorage(url=postgresHook.get_uri())
-    study_name = "btc_catboost_model"
     study: optuna.study.Study = optuna.create_study(
-        study_name=study_name,
+        study_name=study_and_experiment_name,
         direction="maximize",
         storage=storage,
         load_if_exists=True,
@@ -104,15 +109,18 @@ def train_catboost_model_fn(
         "f1_score": f1,
     }
 
-    with mlflow.start_run() as run:
+    with mlflow.start_run(experiment_id=experiment_id, run_name=run_name) as run:
         mlflow.log_params(best_params)
         mlflow.log_metrics(metrics)
         model_info = mlflow.catboost.log_model(model, "model")
+        logger.info(f" model_info: {model_info}")
 
         # 모델을 등록하는 부분
         try:
             model_uri = f"runs:/{run.info.run_id}/model"
-            registered_model = mlflow.register_model(model_uri, "btc_catboost_model")
+            registered_model = mlflow.register_model(
+                model_uri, study_and_experiment_name
+            )
             logger.info(
                 f"Model registered: {registered_model.name}, version: {registered_model.version}"
             )
@@ -120,6 +128,7 @@ def train_catboost_model_fn(
             logger.error(f"Model registration failed: {str(e)}")
             raise
 
+        context["ti"].xcom_push(key="model_name", value=study_and_experiment_name)
         context["ti"].xcom_push(key="run_id", value=run.info.run_id)
         context["ti"].xcom_push(key="model_uri", value=model_uri)
         context["ti"].xcom_push(key="eval_metric", value="f1_score")
@@ -131,7 +140,8 @@ def train_catboost_model_fn(
         )
 
 
-def create_model_version(model_name: str, **context: dict) -> None:
+def create_model_version(**context: dict) -> None:
+    model_name: str = context["ti"].xcom_pull(key="model_name")
     run_id = context["ti"].xcom_pull(key="run_id")
     model_uri = context["ti"].xcom_pull(key="model_uri")
     eval_metric = context["ti"].xcom_pull(key="eval_metric")
@@ -152,7 +162,8 @@ def create_model_version(model_name: str, **context: dict) -> None:
     logger.info(f"Model version created: {model_version.version}")
 
 
-def transition_model_stage(model_name: str, **context: dict) -> None:
+def transition_model_stage(**context: dict) -> None:
+    model_name: str = context["ti"].xcom_pull(key="model_name")
     version = context["ti"].xcom_pull(key="model_version")
     eval_metric = context["ti"].xcom_pull(key="eval_metric")
     client = MlflowClient()
