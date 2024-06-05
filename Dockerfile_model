@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     lsb-release
 
+# Create a non-root user and group named 'astro'
+RUN groupadd -g 1000 astro && useradd -u 1000 -g astro -m -s /bin/bash astro
+
 # Create the keyrings directory
 RUN mkdir -p /etc/apt/keyrings
 
@@ -28,19 +31,19 @@ RUN apt-get install -y docker-ce-cli
 
 WORKDIR /app
 
-COPY requirements_classification.txt /app/requirements_classification.txt
-COPY requirements_preprocess.txt /app/requirements_preprocess.txt
-COPY requirements_save_raw_data.txt /app/requirements_save_raw_data.txt
+COPY requirements_btc_model.txt /app/requirements_btc_model.txt
+
+RUN pip install --no-cache-dir -r /app/requirements_btc_model.txt
 
 COPY dags/module/upbit_price_prediction/btc/classification.py /app/classification.py
 COPY dags/module/upbit_price_prediction/btc/create_table.py /app/create_table.py
 COPY dags/module/upbit_price_prediction/btc/preprocess.py /app/preprocess.py
 COPY dags/module/upbit_price_prediction/btc/save_raw_data.py /app/save_raw_data.py
 
-COPY run_task.sh /app/run_task.sh
-
-RUN chmod +x /app/run_task.sh
+RUN chown -R astro:astro /app
 
 USER astro
 
-ENTRYPOINT ["/app/run_task.sh"]
+ENTRYPOINT ["python"]
+
+# ENTRYPOINT ["/app/run_task.sh"]

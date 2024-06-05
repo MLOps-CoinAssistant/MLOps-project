@@ -13,9 +13,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from typing import Optional, Tuple, Dict, List
 import logging
 import os
+import click
 from info.api import APIInformation
 from dags.module.upbit_price_prediction.btc.create_table import BtcOhlcv, Base
 
+# asyncio의 이벤트루프를 uvloop로 설정
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -218,6 +221,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
 
 
 # Airflow Task에서 호출될 함수
+@click.command()
 def save_raw_data_from_API_fn(**context) -> None:
     ti = context["ti"]
     table_created = ti.xcom_pull(key="table_created", task_ids="create_table_fn")

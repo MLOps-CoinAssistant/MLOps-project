@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import click
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from sqlalchemy import create_engine, Column, DateTime, Integer, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -35,6 +36,7 @@ class BtcPreprocessed(Base):
     label = Column(Integer)
 
 
+@click.command()
 def preprocess_data_fn(**context):
     hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
     engine = create_engine(hook.get_uri())

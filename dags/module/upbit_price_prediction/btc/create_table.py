@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, Column, DateTime, Integer, inspect
 import logging
 from sqlalchemy.orm import declarative_base
 from airflow.exceptions import AirflowSkipException
+import click
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class BtcOhlcv(Base):
     volume = Column(Integer)
 
 
+@click.command()
 def create_table_fn(
     hook: PostgresHook = PostgresHook(
         postgres_conn_id=Connections.POSTGRES_DEFAULT.value

@@ -11,12 +11,14 @@ import mlflow
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
 from info.connections import Connections
+import click
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+@click.command()
 def train_catboost_model_fn(
     hook: PostgresHook = PostgresHook(
         postgres_conn_id=Connections.POSTGRES_DEFAULT.value

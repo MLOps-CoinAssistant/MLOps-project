@@ -39,17 +39,13 @@ def btc_price_prediction_pipeline() -> None:
 
     create_table_task: DockerOperator = DockerOperator(
         task_id="create_table_fn",
-        image="modle_test:latest",  # 빌드한 이미지 사용
+        image="model_test:latest",  # 빌드한 이미지 사용
         api_version="auto",
         auto_remove=True,
-        command="/app/run_task.sh",
+        command="create_table.py create_table_fn",
         docker_url="unix://var/run/docker.sock",
         network_mode="bridge",
-        environment={
-            **common_environment,
-            "TASK": "create_table_task",
-            "FUNCTION": "create_table_fn",
-        },
+        environment=common_environment,
         mounts=[
             Mount(
                 source="/var/run/docker.sock",
@@ -58,21 +54,18 @@ def btc_price_prediction_pipeline() -> None:
             )
         ],
         trigger_rule=TriggerRule.ALL_DONE,
+        user="astro",
     )
 
     save_data_task: DockerOperator = DockerOperator(
         task_id="save_raw_data_from_API_fn",
-        image="modle_test:latest",  # 빌드한 이미지 사용
+        image="model_test:latest",  # 빌드한 이미지 사용
         api_version="auto",
         auto_remove=True,
-        command="/app/run_task.sh",
+        command="save_raw_data.py save_raw_data_from_API_fn",
         docker_url="unix://var/run/docker.sock",
         network_mode="bridge",
-        environment={
-            **common_environment,
-            "TASK": "save_raw_data_task",
-            "FUNCTION": "save_raw_data_from_API_fn",
-        },
+        environment=common_environment,
         mounts=[
             Mount(
                 source="/var/run/docker.sock",
@@ -81,21 +74,18 @@ def btc_price_prediction_pipeline() -> None:
             )
         ],
         trigger_rule=TriggerRule.ALL_DONE,
+        user="astro",
     )
 
     preprocess_task: DockerOperator = DockerOperator(
         task_id="preprocess_data_fn",
-        image="modle_test:latest",  # 빌드한 이미지 사용
+        image="model_test:latest",  # 빌드한 이미지 사용
         api_version="auto",
         auto_remove=True,
-        command="/app/run_task.sh",
+        command="preprocess.py preprocess_data_fn",
         docker_url="unix://var/run/docker.sock",
         network_mode="bridge",
-        environment={
-            **common_environment,
-            "TASK": "preprocess_task",
-            "FUNCTION": "preprocess_data_fn",
-        },
+        environment=common_environment,
         mounts=[
             Mount(
                 source="/var/run/docker.sock",
@@ -104,21 +94,18 @@ def btc_price_prediction_pipeline() -> None:
             )
         ],
         trigger_rule=TriggerRule.ALL_DONE,
+        user="astro",
     )
 
     train_model_task: DockerOperator = DockerOperator(
         task_id="train_catboost_model_fn",
-        image="modle_test:latest",  # 빌드한 이미지 사용
+        image="model_test:latest",  # 빌드한 이미지 사용
         api_version="auto",
         auto_remove=True,
-        command="/app/run_task.sh",
+        command="classification.py train_catboost_model_fn",
         docker_url="unix://var/run/docker.sock",
         network_mode="bridge",
-        environment={
-            **common_environment,
-            "TASK": "classification_task",
-            "FUNCTION": "train_catboost_model_fn",
-        },
+        environment=common_environment,
         mounts=[
             Mount(
                 source="/var/run/docker.sock",
@@ -127,6 +114,7 @@ def btc_price_prediction_pipeline() -> None:
             )
         ],
         trigger_rule=TriggerRule.ALL_DONE,
+        user="astro",
     )
 
     end_task: EmptyOperator = EmptyOperator(
