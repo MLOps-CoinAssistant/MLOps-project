@@ -1,13 +1,11 @@
-from datetime import datetime
-from pydantic import Field
-from pydantic.dataclasses import dataclass
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class BtcOhlcvResp:
-    time: datetime = Field(..., title="Time")
-    open: int = Field(..., title="Open")
-    high: int = Field(..., title="High")
-    low: int = Field(..., title="Low")
-    close: int = Field(..., title="Close")
-    volume: int = Field(..., title="Volume")
+class BtcPredictionResp(BaseModel):
+    prediction: str = Field(..., title="예측 결과", alias="예측 결과")
+    confidence: float = Field(
+        ..., title="신뢰도", description="신뢰도 (%)", alias="신뢰도 (%)"
+    )
+
+    class Config:
+        populate_by_name = True
