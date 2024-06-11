@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 # MinIO 클라이언트 설정
 minio_client = Minio(
     endpoint=config.MINIO_SERVER_URL.replace("http://", ""),  # MinIO 서버 주소
-    access_key=config.MINIO_ACCESS_KEY,  # 접근 키
-    secret_key=config.MINIO_SECRET_KEY,  # 비밀 키
-    secure=False,  # HTTPS를 사용하지 않으려면 False로 설정
+    access_key=config.MINIO_ACCESS_KEY,
+    secret_key=config.MINIO_SECRET_KEY,
+    secure=False,
 )
 
 
@@ -29,34 +29,6 @@ def get_model_uri(bucket_name: str, model_path: str) -> str:
     return uri
 
 
-# def get_local_model_path() -> str:
-#     """
-#     로컬 파일 시스템에서 가장 최근에 업로드된 모델의 경로를 가져옵니다.
-#     """
-#     model_directory = "/home/ubuntu/model_registry/mlflow"
-#     latest_model_path = None
-#     latest_timestamp = 0
-
-#     logger.info(f"Scanning directory: {model_directory}")
-
-#     for root, dirs, files in os.walk(model_directory):
-#         for file in files:
-#             if file == "MLmodel":
-#                 file_path = os.path.join(root, file)
-#                 file_timestamp = os.path.getmtime(file_path)
-#                 logger.info(f"Found MLmodel file: {file_path}, modified at {file_timestamp}")
-#                 if file_timestamp > latest_timestamp:
-#                     latest_timestamp = file_timestamp
-#                     latest_model_path = file_path
-
-#     if latest_model_path is None:
-#         logger.error("No model files found in the local model registry")
-#         raise Exception("No model files found in the local model registry")
-
-#     logger.info(f"Latest model path: {latest_model_path}")
-#     return latest_model_path
-
-
 def load_model_and_metadata(model_uri: str) -> Tuple[mlflow.pyfunc.PyFuncModel, float]:
     """
     모델 URI에서 ML 모델과 메타데이터를 로드합니다.
@@ -64,16 +36,10 @@ def load_model_and_metadata(model_uri: str) -> Tuple[mlflow.pyfunc.PyFuncModel, 
     logger.info(f"Loading model from URI: {model_uri}")
 
     model = mlflow.pyfunc.load_model(model_uri)
-    logger.info("1")
     client = mlflow.tracking.MlflowClient()
-    logger.info("2")
     run_id = model.metadata.run_id
-    logger.info("3")
-    logger.info(f"run_id = {run_id}")
     run = client.get_run(run_id)
-    logger.info("4")
     average_proba = run.data.metrics.get("average_proba")
-    logger.info("5")
     return average_proba
 
 
