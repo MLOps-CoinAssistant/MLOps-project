@@ -24,9 +24,9 @@ async def predict() -> HttpResponse:
 
     average_proba = load_model_and_metadata(model_uri)
 
-    # 예측 결과와 신뢰도 계산
+    # 예측 결과와 확률 계산
     # 예측 결과 : 모델이 예측한 결과의 평균을 0.5를 기준으로 다음 정각의 가격을 "상승" or "하락" 으로 판단
-    # 신뢰도 : 이 예측이 정확할 가능성을 "신뢰도 (%)" 로 표기
+    # 확률 : 이 예측이 정확한 정도를 "확률 (%)" 로 표기
 
     prediction: str = "상승" if average_proba >= 0.5 else "하락"
     confidence: float = round(average_proba * 100, 1)  # 소수점 한 자리로 반올림
