@@ -11,7 +11,7 @@ services:
     environment:
       AWS_ACCESS_KEY_ID: None
       AWS_SECRET_ACCESS_KEY: None
-      MLFLOW_S3_ENDPOINT_URL: http://10.178.0.11:9000
+      MLFLOW_S3_ENDPOINT_URL: http://host.docker.internal:9000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # depends_on:
