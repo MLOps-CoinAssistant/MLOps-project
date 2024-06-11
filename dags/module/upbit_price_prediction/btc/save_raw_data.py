@@ -209,7 +209,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
         logger.info(f"Total collected records: {len(data)}")
 
         await insert_data_into_db(data, db_uri)
-        await delete_old_data(db_uri)
+        # await delete_old_data(db_uri)
 
         # 새로운 데이터의 시간을 XCom에 푸시
         if data:
