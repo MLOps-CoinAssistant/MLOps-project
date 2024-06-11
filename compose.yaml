@@ -13,7 +13,7 @@ x-common-env-vars: &common-env-vars
   AWS_ACCESS_KEY_ID: None
   AWS_SECRET_ACCESS_KEY: None
   MLFLOW_TRACKING_URI: http://host.docker.internal:5000
-  MLFLOW_S3_ENDPOINT_URL: http://host.docker.internal:9000
+  MLFLOW_S3_ENDPOINT_URL: http://10.178.0.11:9000
 
   AIRFLOW__EMAIL__EMAIL_BACKEND: 'airflow.utils.email.send_email_smtp'
   AIRFLOW__EMAIL__EMAIL_CONN_ID: smtp_default
