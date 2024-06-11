@@ -18,3 +18,5 @@ asdf.py
 .ipynb_checkpoints/
 *.ipynb
 catboost_info
+fastapi/app/core/config.py
+fastapi/start.sh

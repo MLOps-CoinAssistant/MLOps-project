@@ -96,6 +96,8 @@ def train_catboost_model_fn(
 
     # 평가 및 로그
     preds = model.predict(valid_pool)
+    proba = model.predict_proba(valid_pool)[:, 1]
+    average_proba = proba.mean()  # 예측 확률의 평균
     accuracy = accuracy_score(y_valid, preds)
     f1 = f1_score(y_valid, preds, average="micro")
     report = classification_report(y_valid, preds)
@@ -107,6 +109,7 @@ def train_catboost_model_fn(
     metrics = {
         "accuracy": accuracy,
         "f1_score": f1,
+        "average_proba": average_proba,
     }
 
     with mlflow.start_run(experiment_id=experiment_id, run_name=run_name) as run:
