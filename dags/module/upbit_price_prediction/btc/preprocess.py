@@ -1,11 +1,21 @@
-import pandas as pd
-import numpy as np
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from sqlalchemy import create_engine, Column, DateTime, Integer, text
+from sqlalchemy import Column, DateTime, Integer, select, func, text
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    AsyncSession,
+    async_scoped_session,
+)
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import declarative_base, sessionmaker
+from info.connections import Connections
+from contextvars import ContextVar
 from datetime import datetime
 import logging
-from info.connections import Connections
+import asyncio
+import uvloop
+
+# uvloop를 기본 이벤트 루프로 설정
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -35,75 +45,186 @@ class BtcPreprocessed(Base):
     label = Column(Integer)
 
 
-def preprocess_data_fn(**context):
+# ContextVar를 사용하여 세션을 관리(비동기 함수간에 컨텍스트를 안전하게 전달하도록 해줌. 세션을 여러 코루틴간에 공유 가능)
+session_context = ContextVar("session_context", default=None)
+
+
+async def preprocess_data(context):
     hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
-    engine = create_engine(hook.get_uri())
-    Session = sessionmaker(bind=engine)
-    session = Session()
+    engine = create_async_engine(
+        hook.get_uri().replace("postgresql", "postgresql+asyncpg"), future=True
+    )
+    session_factory = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    # 비동기 함수들간에 세션을 안전하게 공유, 세션 자동생성/해제 하기 위해 사용. 세션 관리하기 좋고 코드의일관성 유지가능.
+    AsyncScopedSession = async_scoped_session(
+        session_factory, scopefunc=session_context.get
+    )
+
+    token = session_context.set(session_factory)
+
+    # 이전 태스크에서 데이터가 최초삽입인지 아닌지를 구분해서 효율적으로 작업하기 위해 initial_insert를 xcom으로 받아옴
+    initial_insert = context["initial_insert"]
+    new_time_str = context["new_time_str"]
+
+    # 데이터가 추가되지 않았을시에는 이 작업을 하지 않음
+    if new_time_str is None:
+        logger.info("No new data to process. Exiting preprocess_data_fn.")
+        return
 
     try:
-        connection = hook.get_conn()
-        with connection.cursor() as cursor:
+        async with engine.connect() as conn:
+            # Base.metadata.create_all 이 구문을 사용 시 SQLAlchemy의 비동기 지원을 활용해서 데이터베이스의 테이블을 동기방식으로 생성
+            # 비동기 코드에서 동기 메소드를 호출할 수 있게 해줌. 테이블이 존재하지 않는 경우에만 테이블을 생성시킨다.
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.commit()
             logger.info("Creating btc_preprocessed table if not exists")
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS btc_preprocessed (
-                    time TIMESTAMP PRIMARY KEY,
-                    open INTEGER,
-                    high INTEGER,
-                    low INTEGER,
-                    close INTEGER,
-                    volume INTEGER,
-                    label INTEGER
-                );
-            """
-            )
 
-            logger.info("Finding missing times from btc_ohlcv not in btc_preprocessed")
-            cursor.execute(
-                """
-                SELECT MAX(time) FROM btc_ohlcv;
-            """
-            )
-            max_time_ohlcv = cursor.fetchone()[0]
-            logger.info(f"Max time in btc_ohlcv: {max_time_ohlcv}")
+            if initial_insert:
+                # 초기 데이터 처리
+                logger.info("Initial data processing")
+                async with AsyncScopedSession() as session:
 
-            cursor.execute(
-                """
-                SELECT MAX(time) FROM btc_preprocessed;
-            """
-            )
-            max_time_preprocessed = cursor.fetchone()[0]
-            logger.info(f"Max time in btc_preprocessed: {max_time_preprocessed}")
+                    count_ohlcv = await session.scalar(
+                        select(func.count()).select_from(BtcOhlcv)
+                    )
+                    logger.info(f"Count of rows in btc_ohlcv: {count_ohlcv}")
 
-            if not max_time_preprocessed:
-                max_time_preprocessed = datetime.min
+                    expected_count = 24 * 365
 
-            if max_time_ohlcv > max_time_preprocessed:
+                    if count_ohlcv < expected_count:
+                        logger.info(
+                            f"Detected missing data. Expected count: {expected_count}, actual count: {count_ohlcv}"
+                        )
+                        result = await conn.execute(
+                            # generate_series는 두 시간 사이의 간격을 지정해서 지정한 interval만큼의 시간으로 데이터를 생성해줍니다
+                            # 가장 과거의 시간 ~ (가장 과거의시간 + 1년 - 1시간) 만큼을 범위로해서 1시간단위로 일련의 time행을 생성시켜줍니다
+                            text(
+                                """
+                                SELECT gs AS time
+                                FROM generate_series(
+                                    (SELECT MIN(time) FROM btc_ohlcv),
+                                    (SELECT MIN(time) + interval '1 year' - interval '1 hour' FROM btc_ohlcv),
+                                    interval '1 hour'
+                                ) AS gs
+                                WHERE gs NOT IN (SELECT time FROM btc_ohlcv);
+                                """
+                            )
+                        )
+                        missing_times = [row[0] for row in result]
+                        logger.info(f"Missing times: {missing_times}")
+
+                        # 선형보간법으로 누락된 데이터 채우기
+                        for missing_time in missing_times:
+                            prev_data = await session.execute(
+                                select(BtcOhlcv)
+                                .filter(BtcOhlcv.time < missing_time)
+                                .order_by(BtcOhlcv.time.desc())
+                                .limit(1)
+                            )
+                            prev_data = prev_data.scalars().first()
+
+                            next_data = await session.execute(
+                                select(BtcOhlcv)
+                                .filter(BtcOhlcv.time > missing_time)
+                                .order_by(BtcOhlcv.time.asc())
+                                .limit(1)
+                            )
+                            next_data = next_data.scalars().first()
+
+                            if prev_data and next_data:
+                                delta = (missing_time - prev_data.time) / (
+                                    next_data.time - prev_data.time
+                                )
+                                interpolated_open = prev_data.open + delta * (
+                                    next_data.open - prev_data.open
+                                )
+                                interpolated_high = prev_data.high + delta * (
+                                    next_data.high - prev_data.high
+                                )
+                                interpolated_low = prev_data.low + delta * (
+                                    next_data.low - prev_data.low
+                                )
+                                interpolated_close = prev_data.close + delta * (
+                                    next_data.close - prev_data.close
+                                )
+                                interpolated_volume = prev_data.volume + delta * (
+                                    next_data.volume - prev_data.volume
+                                )
+
+                                new_record = BtcPreprocessed(
+                                    time=missing_time,
+                                    open=interpolated_open,
+                                    high=interpolated_high,
+                                    low=interpolated_low,
+                                    close=interpolated_close,
+                                    volume=interpolated_volume,
+                                )
+                                session.add(new_record)
+                        await session.commit()
+
+                # SQLAlchemy Core API를 사용한 방식
+                # Core API는 내부적으로 최적화된 배치 처리 메커니즘을 사용할 수 있게 해주고 메모리 사용량도 줄어든다.
+                # insert().from_select() 를 사용하여 단일 sql쿼리를 생성해서 db에 대한 네트워크 왕복을 줄여서 좀 더 효율적이다.
                 logger.info(
-                    f"Inserting missing times from {max_time_preprocessed} to {max_time_ohlcv}"
-                )
-                cursor.execute(
-                    """
-                    INSERT INTO btc_preprocessed (time, open, high, low, close, volume)
-                    SELECT time, open, high, low, close, volume
-                    FROM btc_ohlcv
-                    WHERE time > %s
-                    ORDER BY time;
-                """,
-                    (max_time_preprocessed,),
+                    "Inserting ALL DATA from btc_ohlcv to btc_preprocessed using Core API"
                 )
 
-                logger.info(
-                    f"Inserted missing times from btc_ohlcv to btc_preprocessed"
+                stmt = (
+                    pg_insert(BtcPreprocessed)
+                    .from_select(
+                        ["time", "open", "high", "low", "close", "volume"],
+                        select(
+                            BtcOhlcv.time,
+                            BtcOhlcv.open,
+                            BtcOhlcv.high,
+                            BtcOhlcv.low,
+                            BtcOhlcv.close,
+                            BtcOhlcv.volume,
+                        ),
+                    )
+                    .on_conflict_do_nothing()
                 )
+                await conn.execute(stmt)
+                await conn.commit()
 
-                logger.info(f"Updating labels for new entries in btc_preprocessed")
-                cursor.execute(
+                logger.info("Data insertion completed.")
+
+            else:
+                # 최초 삽입이 아니라면 airflow 스케줄링에 의한 작은 크기의 데이터들에 대한 처리작업 진행
+                logger.info("Not initial data. Try insert btc_preprocessed")
+                new_time = datetime.fromisoformat(new_time_str)
+                logger.info(f"new_time type : {type(new_time_str)}")
+
+                async with AsyncScopedSession() as session:
+                    new_data = await session.execute(
+                        select(BtcOhlcv).filter(BtcOhlcv.time == new_time).limit(1)
+                    )
+                    new_data = new_data.scalars().first()
+
+                    if new_data:
+                        new_record = BtcPreprocessed(
+                            time=new_data.time,
+                            open=new_data.open,
+                            high=new_data.high,
+                            low=new_data.low,
+                            close=new_data.close,
+                            volume=new_data.volume,
+                        )
+                        session.add(new_record)
+                    await session.commit()
+
+                logger.info("Data insertion completed.")
+
+            logger.info("Updating labels 1 or 0 for all entries in btc_preprocessed")
+            # 상승:1, 하락:0 으로 라벨링
+            await conn.execute(
+                # LAG(close) OVER (ORDER BY time) : time정렬된 데이터에서 현재 데이터의 이전close값을 가져옴
+                # 이것을 현재 close 값이랑 비교해서 1, 0 으로 라벨링
+                text(
                     """
                     WITH CTE AS (
                         SELECT time, close,
-                               LAG(close) OVER (ORDER BY time) AS prev_close
+                            LAG(close) OVER (ORDER BY time) AS prev_close
                         FROM btc_preprocessed
                     )
                     UPDATE btc_preprocessed
@@ -112,38 +233,59 @@ def preprocess_data_fn(**context):
                                     ELSE 0
                                 END
                     FROM CTE
-                    WHERE btc_preprocessed.time = CTE.time
-                    AND btc_preprocessed.time > %s;
-                """,
-                    (max_time_preprocessed,),
-                )
-
-                logger.info(f"Labels updated successfully for new entries")
-
-                logger.info(
-                    f"Sorting btc_preprocessed table by time in ascending order"
-                )
-                cursor.execute(
+                    WHERE btc_preprocessed.time = CTE.time;
                     """
-                    CREATE TABLE temp_btc_preprocessed AS
-                    SELECT * FROM btc_preprocessed
-                    ORDER BY time ASC;
-
-                    DROP TABLE btc_preprocessed;
-
-                    ALTER TABLE temp_btc_preprocessed RENAME TO btc_preprocessed;
-                """
                 )
-                logger.info(f"btc_preprocessed table sorted successfully")
+            )
+            await conn.commit()
+            logger.info("Labels updated successfully for all entries")
+            logger.info("Sorting btc_preprocessed table by time in ascending order")
+            # CLUSTER명령어로 primary key를 기준으로 정렬.
+            async with AsyncScopedSession() as session:
+                await session.execute(
+                    text(
+                        """
+                        ALTER TABLE btc_preprocessed
+                        CLUSTER ON btc_preprocessed_pkey;
+                        """
+                    )
+                )
+                await session.commit()
+            logger.info("btc_preprocessed table sorted successfully using CLUSTER")
 
-            connection.commit()
+            async with AsyncScopedSession() as session:
+                count_final = await session.scalar(
+                    select(func.count()).select_from(BtcPreprocessed)
+                )
+                logger.info(f"Final Count of rows in btc_preprocessed: {count_final}")
 
-        logger.info("Label column added and updated successfully for missing times.")
+            await conn.commit()
+
+        logger.info("Label column added and updated successfully.")
     except Exception as e:
-        session.rollback()
+        await conn.rollback()
         logger.error(f"Data preprocessing failed: {e}")
         raise
     finally:
-        session.close()
+        session_context.reset(token)
+        await engine.dispose()
 
-    context["ti"].xcom_push(key="preprocessed", value=True)
+
+# context["ti"].xcom_push(key="preprocessed", value=True)
+
+
+def preprocess_data_fn(**context):
+    initial_insert = context["ti"].xcom_pull(
+        key="initial_insert", task_ids="save_raw_data_from_API_fn"
+    )
+    new_time_str = context["ti"].xcom_pull(
+        key="new_time", task_ids="save_raw_data_from_API_fn"
+    )
+
+    # 비동기 함수 호출 시 전달할 context 생성(XCom은 JSON직렬화를 요구해서 그냥 쓸려고하면 비동기함수와는 호환이 안됨)
+    async_context = {
+        "initial_insert": initial_insert,
+        "new_time_str": new_time_str,
+    }
+
+    asyncio.run(preprocess_data(async_context))
