@@ -182,7 +182,16 @@ async def preprocess_data(context):
                             BtcOhlcv.volume,
                         ),
                     )
-                    .on_conflict_do_nothing()
+                    .on_conflict_do__update(
+                        index_elements=["time"],
+                        set_={
+                            "open": BtcPreprocessed.open,
+                            "high": BtcPreprocessed.high,
+                            "low": BtcPreprocessed.low,
+                            "close": BtcPreprocessed.close,
+                            "volume": BtcPreprocessed.volume,
+                        },
+                    )
                 )
                 await conn.execute(stmt)
                 await conn.commit()
@@ -202,15 +211,28 @@ async def preprocess_data(context):
                     new_data = new_data.scalars().first()
 
                     if new_data:
-                        new_record = BtcPreprocessed(
-                            time=new_data.time,
-                            open=new_data.open,
-                            high=new_data.high,
-                            low=new_data.low,
-                            close=new_data.close,
-                            volume=new_data.volume,
+                        stmt = (
+                            pg_insert(BtcPreprocessed)
+                            .values(
+                                time=new_data.time,
+                                open=new_data.open,
+                                high=new_data.high,
+                                low=new_data.low,
+                                close=new_data.close,
+                                volume=new_data.volume,
+                            )
+                            .on_conflict_do_update(
+                                index_elements=["time"],
+                                set_={
+                                    "open": new_data.open,
+                                    "high": new_data.high,
+                                    "low": new_data.low,
+                                    "close": new_data.close,
+                                    "volume": new_data.volume,
+                                },
+                            )
                         )
-                        session.add(new_record)
+                        await session.execute(stmt)
                     await session.commit()
 
                 logger.info("Data insertion completed.")
