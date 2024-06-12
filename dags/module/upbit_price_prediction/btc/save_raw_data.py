@@ -15,6 +15,8 @@ import logging
 import os
 from info.api import APIInformation
 from dags.module.upbit_price_prediction.btc.create_table import BtcOhlcv, Base
+from pytz import timezone
+
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -88,11 +90,7 @@ async def fetch_ohlcv_data(session, market: str, to: str, count: int, retry=3):
 
 
 # 데이터베이스에 데이터를 삽입하는 함수
-async def insert_data_into_db(data: list, db_uri: str) -> None:
-    engine = create_engine(db_uri)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
+async def insert_data_into_db(data: list, session) -> None:
     try:
         for record in data:
             logger.debug(f"Inserting record: {record}")  # 디버그용 로그 추가
@@ -129,13 +127,20 @@ async def insert_data_into_db(data: list, db_uri: str) -> None:
 
 
 # 현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
-async def delete_old_data(db_uri: str):
-    engine = create_engine(db_uri)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
+async def delete_old_data(session):
     try:
-        threshold_date = datetime.utcnow() + timedelta(hours=9) - timedelta(days=365)
+        # KST 시간대 설정
+        kst = timezone("Asia/Seoul")
+        now_kst = datetime.now(tz=kst)
+        threshold_date = now_kst - timedelta(days=365)
+        logger.info(f"Threshold date for deletion: {threshold_date}")
+
+        # 디버그를 위해 삭제할 데이터의 개수를 먼저 확인
+        count_query = (
+            session.query(BtcOhlcv).filter(BtcOhlcv.time < threshold_date).count()
+        )
+        logger.info(f"Number of records to be deleted: {count_query}")
+
         deleted_rows = (
             session.query(BtcOhlcv).filter(BtcOhlcv.time < threshold_date).delete()
         )
@@ -149,11 +154,7 @@ async def delete_old_data(db_uri: str):
 
 
 # 데이터베이스에 기록된 가장 최근의 시간 데이터를 가져오는 함수
-def get_most_recent_data_time(db_uri: str) -> datetime:
-    engine = create_engine(db_uri)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
+def get_most_recent_data_time(session) -> datetime:
     most_recent_time = (
         session.query(BtcOhlcv.time).order_by(BtcOhlcv.time.desc()).first()
     )
@@ -167,22 +168,38 @@ def get_most_recent_data_time(db_uri: str) -> datetime:
 
 # 데이터를 수집하고 데이터베이스에 적재하며, 365일이 지난 데이터를 삭제하는 함수
 async def collect_and_load_data(db_uri: str, context: dict) -> None:
-    async with aiohttp.ClientSession() as session:
-        most_recent_time = get_most_recent_data_time(db_uri)
+    """
+    most_recent_time : db에 찍혀있는 데이터 중 가장 최근 시간 (없으면 None)
+    current_time : 현재 시간(kst기준)
+    most_recen_time을 적절하게 설정하여 최초 삽입시 1년치 데이터를 삽입, 그 이후부터는 db의 가장최근시간 ~ 현재시간까지의 데이터를 삽입
+    삽입 전에 공통적으로 현재시간 대비 1년이 지난 과거 데이터는 삭제하는 작업을 거친 후 데이터가 삽입됨
+    """
+    async with aiohttp.ClientSession() as aiohttp_session:
+        engine = create_engine(db_uri)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        most_recent_time = get_most_recent_data_time(session)
         current_time = datetime.now() + timedelta(hours=9)
 
+        # db에 데이터가 들어온적이 있다면 그대로 진행
         if most_recent_time:
             logger.info(
                 f"most_recent_time: {most_recent_time}, current_time: {current_time}"
             )
+            initial_insert = False
+        # db에 데이터가 들어온 적이 없다면 most_recent_time을 1년전의 시간으로 설정해서 1년치 데이터를 가져올 수 있도록 셋팅
         else:
             logger.info(
                 f"No recent data found, setting most_recent_time to one year ago from current_time"
             )
             most_recent_time = current_time - timedelta(days=365)
-
+            initial_insert = True
         time_diff = current_time - most_recent_time
         logger.info(f"time_diff: {time_diff}")
+
+        # 최초 삽입 여부를 XCom에 푸시
+        context["ti"].xcom_push(key="initial_insert", value=initial_insert)
 
         if time_diff < timedelta(hours=1):
             logger.info("Data is already up to date.")
@@ -194,7 +211,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
         while time_diff > timedelta(0):
             logger.info(f"Fetching data up to {to_time}")
             new_data = await fetch_ohlcv_data(
-                session, "KRW-BTC", to_time.strftime("%Y-%m-%dT%H:%M:%S"), 200
+                aiohttp_session, "KRW-BTC", to_time.strftime("%Y-%m-%dT%H:%M:%S"), 200
             )
             if not new_data:
                 break
@@ -206,10 +223,16 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
             time_diff = to_time - most_recent_time
             logger.info(f"Collected {len(new_data)} records, time_diff: {time_diff}")
 
-        logger.info(f"Total collected records: {len(data)}")
+        logger.info(f"initial collected records: {len(data)}")
 
-        await insert_data_into_db(data, db_uri)
-        # await delete_old_data(db_uri)
+        await insert_data_into_db(data, session)
+
+        # 데이터 삽입 후 365일이 지난 데이터를 삭제
+        await delete_old_data(session)
+
+        count_final = session.query(BtcOhlcv).count()
+        logger.info(f"Total collected records: {count_final}")
+        session.close()
 
         # 새로운 데이터의 시간을 XCom에 푸시
         if data:
