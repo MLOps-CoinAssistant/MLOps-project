@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings
 DB_URL: str = "postgresql+asyncpg://postgres:postgres@postgres:5432/postgres"
 
 class Config(BaseSettings):
+    DB_URL: str = DB_URL
     ENV: str = "dev"
     TITLE: str = "Prediction Bitcoin Price"
     VERSION: str = "0.1.0"
