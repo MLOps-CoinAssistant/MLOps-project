@@ -18,11 +18,10 @@ cd fastapi
 pip install poetry
 poetry install
 
-# 환경 변수 설정
-export AWS_ACCESS_KEY_ID=None
-export AWS_SECRET_ACCESS_KEY=None
-export MLFLOW_S3_ENDPOINT_URL=http://host:9000
-export MLFLOW_TRACKING_URI=http://host:5000
+export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+export MLFLOW_S3_ENDPOINT_URL=${MLFLOW_S3_ENDPOINT_URL}:${MLFLOW_S3_ENDPOINT_MAIN_PORT}
+export MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI_LOCAL}:${MLFLOW_TRACKING_PORT}
 
 # FastAPI 서버 시작
 uvicorn app.main:app --reload
