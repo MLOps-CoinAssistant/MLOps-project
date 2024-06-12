@@ -1,22 +1,21 @@
+from dags.module.upbit_price_prediction.btc.create_table import BtcOhlcv
+
+from datetime import datetime, timedelta
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from typing import Optional, Tuple, Dict
+from info.api import APIInformation
+
+import logging
 import asyncio
-import uvloop
 import aiohttp
-import time
+import uvloop
 import jwt
 import uuid
-from datetime import datetime, timedelta
-from airflow.providers.postgres.hooks.postgres import PostgresHook
-from sqlalchemy import create_engine, Column, DateTime, Integer, func, text
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from typing import Optional, Tuple, Dict, List
-import logging
-import os
-from info.api import APIInformation
-from dags.module.upbit_price_prediction.btc.create_table import BtcOhlcv, Base
-from pytz import timezone
 
+# uvloop를 기본 이벤트 루프로 설정
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -122,35 +121,33 @@ async def insert_data_into_db(data: list, session) -> None:
         session.rollback()
         logger.error(f"Failed to insert data into database: {e}")
         raise e
-    finally:
-        session.close()
 
 
 # 현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
 async def delete_old_data(session):
     try:
-        # KST 시간대 설정
-        kst = timezone("Asia/Seoul")
-        now_kst = datetime.now(tz=kst)
-        threshold_date = now_kst - timedelta(days=365)
-        logger.info(f"Threshold date for deletion: {threshold_date}")
+        threshold_date = datetime.now() - timedelta(days=365)
+        threshold_kst = threshold_date + timedelta(hours=9)
+        logger.info(f"Threshold date for deletion: {threshold_kst}")
 
         # 디버그를 위해 삭제할 데이터의 개수를 먼저 확인
         count_query = (
-            session.query(BtcOhlcv).filter(BtcOhlcv.time < threshold_date).count()
+            session.query(BtcOhlcv)
+            .filter(BtcOhlcv.time < threshold_date + timedelta(hours=9))
+            .count()
         )
         logger.info(f"Number of records to be deleted: {count_query}")
 
         deleted_rows = (
-            session.query(BtcOhlcv).filter(BtcOhlcv.time < threshold_date).delete()
+            session.query(BtcOhlcv)
+            .filter(BtcOhlcv.time < threshold_date + timedelta(hours=9))
+            .delete()
         )
         session.commit()
         logger.info(f"Deleted {deleted_rows} old records from the database.")
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to delete old data: {e}")
-    finally:
-        session.close()
 
 
 # 데이터베이스에 기록된 가장 최근의 시간 데이터를 가져오는 함수
@@ -158,7 +155,7 @@ def get_most_recent_data_time(session) -> datetime:
     most_recent_time = (
         session.query(BtcOhlcv.time).order_by(BtcOhlcv.time.desc()).first()
     )
-    session.close()
+
     if most_recent_time:
         logger.info("most_recent_time: {}".format(most_recent_time[0]))
         return most_recent_time[0]
@@ -173,6 +170,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
     current_time : 현재 시간(kst기준)
     most_recen_time을 적절하게 설정하여 최초 삽입시 1년치 데이터를 삽입, 그 이후부터는 db의 가장최근시간 ~ 현재시간까지의 데이터를 삽입
     삽입 전에 공통적으로 현재시간 대비 1년이 지난 과거 데이터는 삭제하는 작업을 거친 후 데이터가 삽입됨
+    initial_insert를 True or False로 설정하여 다음 task에서 이 상태에 맞게 효율적으로 작업할 수 있도록 xcom_push로 전달해줌
     """
     async with aiohttp.ClientSession() as aiohttp_session:
         engine = create_engine(db_uri)
@@ -195,6 +193,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
             )
             most_recent_time = current_time - timedelta(days=365)
             initial_insert = True
+
         time_diff = current_time - most_recent_time
         logger.info(f"time_diff: {time_diff}")
 
@@ -226,12 +225,14 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
         logger.info(f"initial collected records: {len(data)}")
 
         await insert_data_into_db(data, session)
+        count_total = session.query(BtcOhlcv).count()
+        logger.info(f"Total collected records before delete: {count_total}")
 
         # 데이터 삽입 후 365일이 지난 데이터를 삭제
         await delete_old_data(session)
 
         count_final = session.query(BtcOhlcv).count()
-        logger.info(f"Total collected records: {count_final}")
+        logger.info(f"Final collected records: {count_final}")
         session.close()
 
         # 새로운 데이터의 시간을 XCom에 푸시
