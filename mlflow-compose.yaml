@@ -2,16 +2,17 @@ version: '3.4'
 
 services:
   mlflow-server:
+    env_file: ".env"
     build:
       context: .
       dockerfile: Dockerfile-mlflow
     container_name: mlflow-server
     ports:
-      - 5000:5000
+      - ${MLFLOW_TRACKING_PORT}:${MLFLOW_TRACKING_PORT}
     environment:
-      AWS_ACCESS_KEY_ID: None
-      AWS_SECRET_ACCESS_KEY: None
-      MLFLOW_S3_ENDPOINT_URL: http://host.docker.internal:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}:${MLFLOW_S3_ENDPOINT_MAIN_PORT}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # depends_on:
@@ -21,9 +22,9 @@ services:
       - -c
       - |
         mlflow server \
-          --backend-store-uri postgresql://postgres:postgres@postgres \
-          --default-artifact-root s3://mlflow/ \
-          --host 0.0.0.0
+          --backend-store-uri ${DB_TYPE}://${DB_USER}:${DB_PW}@${MLFLOW_DB_HOST} \
+          --default-artifact-root ${ARTIFACT_ROOT} \
+          --host ${MLFLOW_SERVER_HOST}
 
   # artifact-store:
   #   image: minio/minio:RELEASE.2024-04-06T05-26-02Z

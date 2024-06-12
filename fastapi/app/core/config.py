@@ -1,10 +1,30 @@
 import os
 import logging
 from typing import Dict, Any
+from dotenv import load_dotenv
+load_dotenv()
 
 from pydantic_settings import BaseSettings
 
-DB_URL: str = "postgresql+asyncpg://postgres:postgres@postgres:5432/postgres"
+# 로깅 설정
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+class Settings(BaseSettings):
+    DB_TYPE: str = os.getenv('DB_TYPE')
+    DB_USER: str = os.getenv('DB_USER')
+    DB_PW: str = os.getenv('DB_PW')
+    DB_HOST: str = os.getenv('DB_HOST')
+    DB_PORT: int = os.getenv('DB_PORT')
+    DB_NAME: str = os.getenv('DB_DEFAULT_NAME')
+    
+    class Config:
+       env_file = '.env'
+       env_file_encoding = 'utf-8'
+       
+
+settings = Settings()
+DB_URL: str = f"{settings.DB_TYPE}+asyncpg://{settings.DB_USER}:{settings.DB_PW}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
 class Config(BaseSettings):
     DB_URL: str = DB_URL
