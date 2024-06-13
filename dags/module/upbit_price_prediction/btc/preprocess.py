@@ -11,13 +11,10 @@ from info.connections import Connections
 from contextvars import ContextVar
 from info.connections import Connections
 from contextvars import ContextVar
+from info.connections import Connections
+from contextvars import ContextVar
 from datetime import datetime
 import logging
-import asyncio
-import uvloop
-
-# uvloop를 기본 이벤트 루프로 설정
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 import asyncio
 import uvloop
 
@@ -312,16 +309,12 @@ async def preprocess_data(context):
                     select(func.count()).select_from(BtcPreprocessed)
                 )
                 logger.info(f"Final Count of rows in btc_preprocessed: {count_final}")
-                logger.info(f"Final Count of rows in btc_preprocessed: {count_final}")
 
             await conn.commit()
-            await conn.commit()
 
-        logger.info("Label column added and updated successfully.")
-        logger.info("Label column added and updated successfully.")
+        logger.info("Label column added and updated successfully for missing times.")
     except Exception as e:
-        await conn.rollback()
-        await conn.rollback()
+        session.rollback()
         logger.error(f"Data preprocessing failed: {e}")
         raise
     finally:
