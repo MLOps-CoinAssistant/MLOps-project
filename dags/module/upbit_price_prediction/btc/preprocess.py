@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import declarative_base, sessionmaker
 from info.connections import Connections
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import asyncio
 import uvloop
@@ -52,17 +52,23 @@ session_context = ContextVar("session_context", default=None)
 async def fill_missing_and_null_data(session, conn, past_new_time_str, new_time_str):
     # 이번 파이프라인에서 적재된 데이터 중 누락된 데이터 or null 값이 있는 데이터를 확인해서 선형보간법으로 채워줌
     new_time = datetime.fromisoformat(new_time_str)
-
+    new_time_iso = new_time.isoformat()
     # 만약 존재하면 datetime으로 바꿔주고, 없을 시 0으로 할당
     if past_new_time_str:
         past_new_time = datetime.fromisoformat(past_new_time_str)
+        past_new_time_iso = past_new_time.isoformat()
+        past_new_time_plus_1_hour = (past_new_time + timedelta(hours=1)).isoformat()
     else:
         past_new_time = None
+    logger.info(f"type of new_time : {type(new_time)}")
+    logger.info(f"new_time : {new_time}")
+    logger.info(f"type of past_new_time : {type(past_new_time)}")
+    logger.info(f"past_new_time : {past_new_time}")
 
     # 최초 삽입 시 generate_series 범위를 1년으로 잡는다
     if past_new_time is None:
         query = text(
-            """
+            f"""
             SELECT gs AS time, b.open, b.high, b.low, b.close, b.volume
             FROM generate_series(
                 (SELECT MIN(time) FROM btc_ohlcv),
@@ -71,33 +77,39 @@ async def fill_missing_and_null_data(session, conn, past_new_time_str, new_time_
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
             WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL)
-            AND gs <= :new_time
+            AND gs <= '{new_time_iso}'::timestamp
             """
-        ).bindparams(bindparam("new_time", value=new_time))
+        )
+        # .bindparams(bindparam("new_time", value=new_time))
         # bindparam을 이용하면 쿼리에 직접 값을 입력하지 않고 파라미터를 바인딩할 수 있게 해줌.
         # 타입도 알아서 적절하게 변환시켜줌
 
     # 최초 삽입이 아닐 시에는 삽입 전 가장 최신데이터의 시간(past_new_time) 이후부터 ~ 이전 태스크에서 적재된 후 최신데이터의 시간(new_time)까지 generate_series 범위로 선택
     else:
+        logger.info("-----------------")
         query = text(
-            """
+            f"""
             SELECT gs AS time, b.open, b.high, b.low, b.close, b.volume
             FROM generate_series(
-                :past_new_time::timestamp + interval '1 hour',
-                :new_time::timestamp,
+                '{past_new_time_plus_1_hour}'::timestamp,
+                '{new_time_iso}'::timestamp,
                 interval '1 hour'
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
             WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL)
-            AND gs > :past_new_time
+            AND gs > '{past_new_time_iso}'::timestamp
             """
-        ).bindparams(
-            bindparam("past_new_time", value=past_new_time),
-            bindparam("new_time", value=new_time),
         )
 
+        # .bindparams(
+        #     bindparam("past_new_time", value=past_new_time),
+        #     bindparam("new_time", value=new_time)
+        # )
+        logger.info("-----------------")
+        logger.info(query)
+
     result = await conn.execute(query)
-    missing_or_null_data = await result.fetchall()
+    missing_or_null_data = result.fetchall()
     logger.info(f"Missing or null data records: {missing_or_null_data}")
 
     # 선형보간법으로 누락된 데이터 및 null 값 채우기
@@ -321,6 +333,7 @@ async def preprocess_data(context):
 
 
 def preprocess_data_fn(**context):
+
     initial_insert = context["ti"].xcom_pull(
         key="initial_insert", task_ids="save_raw_data_from_API_fn"
     )
