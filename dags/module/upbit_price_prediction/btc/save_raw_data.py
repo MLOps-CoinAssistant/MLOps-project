@@ -166,7 +166,7 @@ def get_most_recent_data_time(session) -> datetime:
 # 데이터를 수집하고 데이터베이스에 적재하며, 365일이 지난 데이터를 삭제하는 함수
 async def collect_and_load_data(db_uri: str, context: dict) -> None:
     """
-    most_recent_time : db에 찍혀있는 데이터 중 가장 최근 시간 (없으면 None)
+    most_recent_time : 삽입 전 db에 찍혀있는 데이터 중 가장 최근 시간 (없으면 None)
     current_time : 현재 시간(kst기준)
     most_recen_time을 적절하게 설정하여 최초 삽입시 1년치 데이터를 삽입, 그 이후부터는 db의 가장최근시간 ~ 현재시간까지의 데이터를 삽입
     삽입 전에 공통적으로 현재시간 대비 1년이 지난 과거 데이터는 삭제하는 작업을 거친 후 데이터가 삽입됨
@@ -197,8 +197,15 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
         time_diff = current_time - most_recent_time
         logger.info(f"time_diff: {time_diff}")
 
-        # 최초 삽입 여부를 XCom에 푸시
+        # 최초 삽입 여부와 적재 전 최신시간을 XCom에 푸시
         context["ti"].xcom_push(key="initial_insert", value=initial_insert)
+
+        get_time_before = get_most_recent_data_time(session)
+        # 최초삽입시에는 past_new_time이 의미가 없기 때문에 존재할 경우에만 Xcom에 푸시
+        if get_time_before:
+            context["ti"].xcom_push(
+                key="past_new_time", value=get_time_before.isoformat()
+            )
 
         if time_diff < timedelta(hours=1):
             logger.info("Data is already up to date.")
@@ -233,12 +240,16 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
 
         count_final = session.query(BtcOhlcv).count()
         logger.info(f"Final collected records: {count_final}")
+
+        # 데이터 적재 후 가장 최신 시간을 new_time으로 푸시
+        latest_time = get_most_recent_data_time(session)
         session.close()
 
-        # 새로운 데이터의 시간을 XCom에 푸시
-        if data:
-            last_record_time = datetime.fromisoformat(data[-1]["candle_date_time_kst"])
-            context["ti"].xcom_push(key="new_time", value=last_record_time.isoformat())
+        # 만약 존재하면 최신 데이터시간, 아니면 현재시간으로 푸시
+        if latest_time:
+            context["ti"].xcom_push(key="new_time", value=latest_time.isoformat())
+        else:
+            context["ti"].xcom_push(key="new_time", value=current_time.isoformat())
 
 
 # Airflow Task에서 호출될 함수
