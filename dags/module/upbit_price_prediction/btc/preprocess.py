@@ -1,5 +1,5 @@
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from sqlalchemy import Column, DateTime, Integer, select, func, text, bindparam
+from sqlalchemy import Column, DateTime, Integer, select, func, text
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
@@ -49,21 +49,50 @@ class BtcPreprocessed(Base):
 session_context = ContextVar("session_context", default=None)
 
 
-async def fill_missing_and_null_data(session, conn, past_new_time_str, new_time_str):
-    # 이번 파이프라인에서 적재된 데이터 중 누락된 데이터 or null 값이 있는 데이터를 확인해서 선형보간법으로 채워줌
-    new_time = datetime.fromisoformat(new_time_str)
-    new_time_iso = new_time.isoformat()
-    # 만약 존재하면 datetime으로 바꿔주고, 없을 시 0으로 할당
-    if past_new_time_str:
-        past_new_time = datetime.fromisoformat(past_new_time_str)
-        past_new_time_iso = past_new_time.isoformat()
-        past_new_time_plus_1_hour = (past_new_time + timedelta(hours=1)).isoformat()
+async def fill_missing_and_null_data(
+    session: AsyncSession,
+    conn: AsyncSession,
+    past_new_time: str,
+    new_time: str,
+    current_time: str,
+) -> None:
+    """
+    - XCom으로 받아온 변수 설명
+    initial_insert : save_raw_data_API_fn 태스크에서 데이터를 적재할 때 최초 삽입시 True, 아닐시 False
+    new_time : save_raw_data_API_fn 태스크에서 적재 후 db에 적재된 데이터 중 가장 최근시간
+    past_new_time : save_raw_data_API_fn 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
+    current_time : save_raw_data_API_fn 태스크에서 업비트에 데이터를 호출했을 당시의 시간
+
+
+    - 함수에 대한 설명
+    이 함수는 이전 태스크에서 적재된 데이터 중 누락된 데이터 or null 값이 있는 데이터를 확인한 후
+    만약 누락된 데이터나 null값이 존재하지 않을시 즉시 함수를 종료시킵니다
+    처리해야 할 데이터가 존재한다면 선형보간법을 적용하고 upsert방식으로 btc_preprocessed 테이블에 삽입합니다
+    """
+
+    # 만약 존재하면 datetime으로 바꿔주고, 없을 시 None
+    if past_new_time:
+        past_new_time_plus_1_hour = (
+            datetime.fromisoformat(past_new_time) + timedelta(hours=1)
+        ).isoformat()
     else:
         past_new_time = None
+
+    # current time : 정각의 시간을 필요로 하기 때문에 시간 밑으로는 버림
+    # one_year_ago : generate_series로 current_time을 기준으로 과거 1년치의 데이터를 가져오기 위한 기간설정
+    current_time = (
+        datetime.fromisoformat(current_time).replace(minute=0, second=0, microsecond=0)
+    ).isoformat()
+    one_year_ago = (
+        datetime.fromisoformat(current_time) - timedelta(days=365, hours=-1)
+    ).isoformat()
+
     logger.info(f"type of new_time : {type(new_time)}")
     logger.info(f"new_time : {new_time}")
     logger.info(f"type of past_new_time : {type(past_new_time)}")
     logger.info(f"past_new_time : {past_new_time}")
+    logger.info(f"type of current_time : {type(current_time)}")
+    logger.info(f"current_time : {current_time}")
 
     # 최초 삽입 시 generate_series 범위를 1년으로 잡는다
     if past_new_time is None:
@@ -71,18 +100,15 @@ async def fill_missing_and_null_data(session, conn, past_new_time_str, new_time_
             f"""
             SELECT gs AS time, b.open, b.high, b.low, b.close, b.volume
             FROM generate_series(
-                (SELECT MIN(time) FROM btc_ohlcv),
-                (SELECT MIN(time) + interval '1 year' - interval '1 hour' FROM btc_ohlcv),
+                '{one_year_ago}'::timestamp,
+                '{current_time}'::timestamp,
                 interval '1 hour'
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
             WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL)
-            AND gs <= '{new_time_iso}'::timestamp
+            AND gs <= '{new_time}'::timestamp
             """
         )
-        # .bindparams(bindparam("new_time", value=new_time))
-        # bindparam을 이용하면 쿼리에 직접 값을 입력하지 않고 파라미터를 바인딩할 수 있게 해줌.
-        # 타입도 알아서 적절하게 변환시켜줌
 
     # 최초 삽입이 아닐 시에는 삽입 전 가장 최신데이터의 시간(past_new_time) 이후부터 ~ 이전 태스크에서 적재된 후 최신데이터의 시간(new_time)까지 generate_series 범위로 선택
     else:
@@ -92,25 +118,28 @@ async def fill_missing_and_null_data(session, conn, past_new_time_str, new_time_
             SELECT gs AS time, b.open, b.high, b.low, b.close, b.volume
             FROM generate_series(
                 '{past_new_time_plus_1_hour}'::timestamp,
-                '{new_time_iso}'::timestamp,
+                '{new_time}'::timestamp,
                 interval '1 hour'
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
             WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL)
-            AND gs > '{past_new_time_iso}'::timestamp
+            AND gs > '{past_new_time}'::timestamp
             """
         )
-
-        # .bindparams(
-        #     bindparam("past_new_time", value=past_new_time),
-        #     bindparam("new_time", value=new_time)
-        # )
         logger.info("-----------------")
         logger.info(query)
 
     result = await conn.execute(query)
     missing_or_null_data = result.fetchall()
+    logger.info(f"Missing or null data counts : {len(missing_or_null_data)}")
     logger.info(f"Missing or null data records: {missing_or_null_data}")
+
+    # 누락된 데이터 or null값인 데이터가 존재하지 않을 시 이 함수 탈출
+    if not missing_or_null_data:
+        logger.info(
+            "No missing or null data found. Skipping fill_missing_and_null_data."
+        )
+        return
 
     # 선형보간법으로 누락된 데이터 및 null 값 채우기
     for record in missing_or_null_data:
@@ -159,14 +188,13 @@ async def fill_missing_and_null_data(session, conn, past_new_time_str, new_time_
     await session.commit()
 
 
-async def preprocess_data(context):
+async def preprocess_data(context: dict) -> None:
     """
     XCom으로 받아온 변수 설명
     initial_insert : save_raw_data_API_fn 태스크에서 데이터를 적재할 때 최초 삽입시 True, 아닐시 False
-    new_time_str : save_raw_data_API_fn 태스크에서 적재 후 db에 적재된 데이터 중 가장 최근시간
-    past_new_time_str : save_raw_data_API_fn 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
-
-
+    new_time : save_raw_data_API_fn 태스크에서 적재 후 db에 적재된 데이터 중 가장 최근시간
+    past_new_time : save_raw_data_API_fn 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
+    current_time : save_raw_data_API_fn 태스크에서 업비트에 데이터를 호출했을 당시의 시간
     """
     hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
     engine = create_async_engine(
@@ -182,15 +210,16 @@ async def preprocess_data(context):
 
     # 이전 태스크에서 데이터가 최초삽입인지 아닌지를 구분해서 효율적으로 작업하기 위해 initial_insert를 xcom으로 받아옴
     initial_insert = context["initial_insert"]
-    new_time_str = context["new_time_str"]
-    past_new_time_str = context["past_new_time_str"]
+    new_time = context["new_time"]
+    past_new_time = context["past_new_time"]
+    current_time = context["current_time"]
 
     logger.info(f"initial_insert : {initial_insert}")
-    logger.info(f"new_time_str : {new_time_str}")
-    logger.info(f"past_new_time_str : {past_new_time_str}")
+    logger.info(f"new_time : {new_time}")
+    logger.info(f"past_new_time : {past_new_time}")
 
     # 데이터가 추가되지 않았을시에는 이 작업을 하지 않음
-    if new_time_str is None:
+    if new_time is None:
         logger.info("No new data to process. Exiting preprocess_data_fn.")
         return
 
@@ -204,7 +233,7 @@ async def preprocess_data(context):
 
             async with AsyncScopedSession() as session:
                 await fill_missing_and_null_data(
-                    session, conn, past_new_time_str, new_time_str
+                    session, conn, past_new_time, new_time, current_time
                 )
 
                 if initial_insert:
@@ -235,24 +264,28 @@ async def preprocess_data(context):
                 else:
                     # 최초 삽입이 아니라면 airflow 스케줄링에 의한 작은 크기의 데이터들에 대한 처리작업 진행
                     logger.info("Not initial data. Try insert btc_preprocessed")
-                    new_time = datetime.fromisoformat(new_time_str)
-                    logger.info(f"new_time type : {type(new_time_str)}")
+                    new_time = datetime.fromisoformat(new_time)
+                    logger.info(f"new_time type : {type(new_time)}")
 
+                    # 이전 태스크에 적재된 범위 내의 모든 데이터를 삽입
                     new_data = await session.execute(
-                        select(BtcOhlcv).filter(BtcOhlcv.time == new_time).limit(1)
+                        select(BtcOhlcv).filter(
+                            BtcOhlcv.time > text(f"'{past_new_time}'::timestamp"),
+                            BtcOhlcv.time <= text(f"'{new_time}'::timestamp"),
+                        )
                     )
-                    new_data = new_data.scalars().first()
+                    new_data = new_data.scalars().all()
 
-                    if new_data:
+                    for data in new_data:
                         stmt = (
                             pg_insert(BtcPreprocessed)
                             .values(
-                                time=new_data.time,
-                                open=new_data.open,
-                                high=new_data.high,
-                                low=new_data.low,
-                                close=new_data.close,
-                                volume=new_data.volume,
+                                time=data.time,
+                                open=data.open,
+                                high=data.high,
+                                low=data.low,
+                                close=data.close,
+                                volume=data.volume,
                             )
                             .on_conflict_do_update(  # excluded : 충돌시 제외된 값을 업데이트
                                 index_elements=["time"],
@@ -269,8 +302,7 @@ async def preprocess_data(context):
                         )
                         await session.execute(stmt)
                     await session.commit()
-
-                    logger.info("Data insertion completed.")
+                    logger.info(f"Data insertion completed. counts:{len(new_data)}")
 
                 logger.info(
                     "Updating labels 1 or 0 for all entries in btc_preprocessed"
@@ -298,9 +330,8 @@ async def preprocess_data(context):
                 )
                 await conn.commit()
                 logger.info("Labels updated successfully for all entries")
-                logger.info("Sorting btc_preprocessed table by time in ascending order")
-                # CLUSTER명령어로 primary key를 기준으로 정렬.
 
+                # CLUSTER명령어로 primary key를 기준으로 정렬.
                 await session.execute(
                     text(
                         """
@@ -310,8 +341,9 @@ async def preprocess_data(context):
                     )
                 )
                 await session.commit()
-                logger.info("btc_preprocessed table sorted successfully using CLUSTER")
-
+                logger.info(
+                    "Sorting btc_preprocessed table by time in ascending order using CLUSTER"
+                )
                 count_final = await session.scalar(
                     select(func.count()).select_from(BtcPreprocessed)
                 )
@@ -332,23 +364,26 @@ async def preprocess_data(context):
 # context["ti"].xcom_push(key="preprocessed", value=True)
 
 
-def preprocess_data_fn(**context):
+def preprocess_data_fn(**context) -> None:
 
     initial_insert = context["ti"].xcom_pull(
         key="initial_insert", task_ids="save_raw_data_from_API_fn"
     )
-    new_time_str = context["ti"].xcom_pull(
+    new_time = context["ti"].xcom_pull(
         key="new_time", task_ids="save_raw_data_from_API_fn"
     )
-    past_new_time_str = context["ti"].xcom_pull(
+    past_new_time = context["ti"].xcom_pull(
         key="past_new_time", task_ids="save_raw_data_from_API_fn"
     )
-
+    current_time = context["ti"].xcom_pull(
+        key="current_time", task_ids="save_raw_data_from_API_fn"
+    )
     # 비동기 함수 호출 시 전달할 context 생성(XCom은 JSON직렬화를 요구해서 그냥 쓸려고하면 비동기함수와는 호환이 안됨)
     async_context = {
         "initial_insert": initial_insert,
-        "new_time_str": new_time_str,
-        "past_new_time_str": past_new_time_str,
+        "new_time": new_time,
+        "past_new_time": past_new_time,
+        "current_time": current_time,
     }
 
     asyncio.run(preprocess_data(async_context))

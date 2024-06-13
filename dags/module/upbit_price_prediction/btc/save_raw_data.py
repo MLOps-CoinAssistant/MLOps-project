@@ -8,22 +8,13 @@ from typing import Optional, Tuple, Dict
 from info.api import APIInformation
 
 import logging
-from dags.module.upbit_price_prediction.btc.create_table import BtcOhlcv
-
-from datetime import datetime, timedelta
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from typing import Optional, Tuple, Dict
-from info.api import APIInformation
-
-import logging
 import asyncio
 import aiohttp
 import uvloop
 import uvloop
 import jwt
 import uuid
+import time
 
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -102,6 +93,7 @@ async def fetch_ohlcv_data(session, market: str, to: str, count: int, retry=3):
 # 데이터베이스에 데이터를 삽입하는 함수
 async def insert_data_into_db(data: list, session) -> None:
     try:
+        inserted_count = 0
         for record in data:
             logger.debug(f"Inserting record: {record}")  # 디버그용 로그 추가
             stmt = (
@@ -124,10 +116,15 @@ async def insert_data_into_db(data: list, session) -> None:
                         "volume": record["candle_acc_trade_volume"],
                     },
                 )
+                .returning(BtcOhlcv.time)  # Insert된 행의 수를 반환하기위해사용
             )
-            session.execute(stmt)
+            result = session.execute(stmt)
+            inserted_count += len(result.fetchall())
+
         session.commit()
         logger.info("Data inserted successfully")
+        logger.info(f"Inserted Data counts: {inserted_count}")
+
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to insert data into database: {e}")
@@ -183,6 +180,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
     삽입 전에 공통적으로 현재시간 대비 1년이 지난 과거 데이터는 삭제하는 작업을 거친 후 데이터가 삽입됨
     initial_insert를 True or False로 설정하여 다음 task에서 이 상태에 맞게 효율적으로 작업할 수 있도록 xcom_push로 전달해줌
     """
+
     async with aiohttp.ClientSession() as aiohttp_session:
         engine = create_engine(db_uri)
         Session = sessionmaker(bind=engine)
@@ -209,11 +207,12 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
         time_diff = current_time - most_recent_time
         logger.info(f"time_diff: {time_diff}")
 
-        # 최초 삽입 여부와 적재 전 최신시간을 XCom에 푸시
+        # 최초 삽입 여부와 현재시간을 XCom에 푸시
         context["ti"].xcom_push(key="initial_insert", value=initial_insert)
-
+        context["ti"].xcom_push(key="current_time", value=current_time.isoformat())
         get_time_before = get_most_recent_data_time(session)
-        # 최초삽입시에는 past_new_time이 의미가 없기 때문에 존재할 경우에만 Xcom에 푸시
+
+        # 최초삽입시에는 past_new_time이 의미가 없기 때문에 존재할 경우에만 적재전의 db의 최신데이터 시간을 Xcom에 푸시
         if get_time_before:
             context["ti"].xcom_push(
                 key="past_new_time", value=get_time_before.isoformat()
@@ -224,6 +223,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
             return
 
         data = []
+
         to_time = current_time
 
         while time_diff > timedelta(0):
@@ -244,9 +244,9 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
         logger.info(f"initial collected records: {len(data)}")
 
         await insert_data_into_db(data, session)
+
         count_total = session.query(BtcOhlcv).count()
         logger.info(f"Total collected records before delete: {count_total}")
-
         # 데이터 삽입 후 365일이 지난 데이터를 삭제
         await delete_old_data(session)
 
@@ -266,6 +266,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
 
 # Airflow Task에서 호출될 함수
 def save_raw_data_from_API_fn(**context) -> None:
+    start_time = time.time()
     ti = context["ti"]
     table_created = ti.xcom_pull(key="table_created", task_ids="create_table_fn")
     db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
@@ -279,3 +280,6 @@ def save_raw_data_from_API_fn(**context) -> None:
         asyncio.run(collect_and_load_data(db_uri, context))
     else:
         logger.info("Table not created and data collection and load process skipped.")
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    logger.info(f"Total working time : {elapsed_time:.4f} sec")
