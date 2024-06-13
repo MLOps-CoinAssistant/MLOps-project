@@ -8,11 +8,23 @@ from typing import Optional, Tuple, Dict
 from info.api import APIInformation
 
 import logging
+from dags.module.upbit_price_prediction.btc.create_table import BtcOhlcv
+
+from datetime import datetime, timedelta
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from typing import Optional, Tuple, Dict
+from info.api import APIInformation
+
+import logging
 import asyncio
 import aiohttp
 import uvloop
+import uvloop
 import jwt
 import uuid
+
 
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -124,6 +136,8 @@ async def insert_data_into_db(data: list, session) -> None:
 
 
 # 현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
+
+
 async def delete_old_data(session):
     try:
         threshold_date = datetime.now() - timedelta(days=365)
@@ -185,6 +199,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
             logger.info(
                 f"most_recent_time: {most_recent_time}, current_time: {current_time}"
             )
+
             initial_insert = False
         # db에 데이터가 들어온 적이 없다면 most_recent_time을 1년전의 시간으로 설정해서 1년치 데이터를 가져올 수 있도록 셋팅
         else:
