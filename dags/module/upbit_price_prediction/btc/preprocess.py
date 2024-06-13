@@ -9,10 +9,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import declarative_base, sessionmaker
 from info.connections import Connections
 from contextvars import ContextVar
-from info.connections import Connections
-from contextvars import ContextVar
-from info.connections import Connections
-from contextvars import ContextVar
 from datetime import datetime
 import logging
 import asyncio
@@ -55,7 +51,6 @@ session_context = ContextVar("session_context", default=None)
 
 async def fill_missing_and_null_data(session, conn, past_new_time_str, new_time_str):
     # 이번 파이프라인에서 적재된 데이터 중 누락된 데이터 or null 값이 있는 데이터를 확인해서 선형보간법으로 채워줌
-
     new_time = datetime.fromisoformat(new_time_str)
 
     # 만약 존재하면 datetime으로 바꿔주고, 없을 시 0으로 할당

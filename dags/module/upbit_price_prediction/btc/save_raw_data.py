@@ -25,7 +25,6 @@ import uvloop
 import jwt
 import uuid
 
-
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
@@ -136,8 +135,6 @@ async def insert_data_into_db(data: list, session) -> None:
 
 
 # 현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
-
-
 async def delete_old_data(session):
     try:
         threshold_date = datetime.now() - timedelta(days=365)
