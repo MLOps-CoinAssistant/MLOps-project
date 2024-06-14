@@ -103,44 +103,20 @@ async def fetch_ohlcv_data(session, market: str, to: str, count: int, retry=3):
 # 데이터베이스에 데이터를 삽입하는 함수
 async def insert_data_into_db(data: list, session, initial_insert: bool) -> None:
     try:
-        # 청크 최적화를 위해 cpu, 메모리사용량, 속도 테스트
+        # 최적화를 위해 cpu, 메모리사용량, 속도 테스트
         start_time = time.time()
         process = psutil.Process()
         initial_memory = process.memory_info().rss
         initial_cpu = process.cpu_percent(interval=None)
 
-        # # 최대 인수 개수 (postgresql의 최대 개수 = 32767)
-        # max_args = 32767
-        # # 각 행에 필요한 인수 개수
-        # args = 6
-        # # 청크 크기 계산
-        # chunk_size = max_args // args
         chunk_size = 100
 
         inserted_count = 0
         if initial_insert:
-            #     # 최초 삽입 시 데이터 청크 단위로 나누어 삽입
-            #     # 한 번에 너무 많은 데이터를 넣지 않도록 해서 메모리 사용량을 줄이고 db와의 통신시간 줄일 수 있다
-            # for i in range(0, len(data), chunk_size):
-            #     chunk = data[i:i + chunk_size]
-            #     bulk_data = [
-            #         {
-            #             "time": datetime.fromisoformat(record["candle_date_time_kst"]),
-            #             "open": record["opening_price"],
-            #             "high": record["high_price"],
-            #             "low": record["low_price"],
-            #             "close": record["trade_price"],
-            #             "volume": record["candle_acc_trade_volume"],
-            #         }
-            #         for record in chunk
-            #     ]
-
-            #     stmt = pg_insert(BtcOhlcv).values(bulk_data).on_conflict_do_nothing().returning(BtcOhlcv.time)
-
-            #     result = await session.execute(stmt)
-            #     inserted_count += len(result.fetchall())
-
-            async def process_chunk(chunk):
+            # 최초 삽입 시 데이터 청크 단위로 나누어 삽입
+            # 한 번에 너무 많은 데이터를 넣지 않도록 해서 메모리 사용량을 줄이고 db와의 통신시간 줄일 수 있다
+            for i in range(0, len(data), chunk_size):
+                chunk = data[i : i + chunk_size]
                 bulk_data = [
                     {
                         "time": datetime.fromisoformat(record["candle_date_time_kst"]),
@@ -159,15 +135,9 @@ async def insert_data_into_db(data: list, session, initial_insert: bool) -> None
                     .on_conflict_do_nothing()
                     .returning(BtcOhlcv.time)
                 )
-                result = await session.execute(stmt)
-                return len(result.fetchall())
 
-            tasks = [
-                process_chunk(data[i : i + chunk_size])
-                for i in range(0, len(data), chunk_size)
-            ]
-            results = await asyncio.gather(*tasks)
-            inserted_count = sum(results)
+                result = await session.execute(stmt)
+                inserted_count += len(result.fetchall())
         else:
             for record in data:
                 stmt = (
