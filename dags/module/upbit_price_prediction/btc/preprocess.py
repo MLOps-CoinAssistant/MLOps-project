@@ -8,6 +8,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import declarative_base, sessionmaker
 from contextvars import ContextVar
 from datetime import datetime, timedelta
+
+import numpy as np
 import logging
 import asyncio
 import uvloop
@@ -52,8 +54,9 @@ async def fill_missing_and_null_data(
     session: AsyncSession,
     conn: AsyncSession,
     past_new_time: str,
-    new_time: str,
+    new_time,
     current_time: str,
+    minutes: int,
 ) -> None:
     """
     - XCom으로 받아온 변수 설명
@@ -109,7 +112,8 @@ async def fill_missing_and_null_data(
             """
         )
 
-    # 최초 삽입이 아닐 시에는 삽입 전 가장 최신데이터의 시간(past_new_time) 이후부터 ~ 이전 태스크에서 적재된 후 최신데이터의 시간(new_time)까지 generate_series 범위로 선택
+    # 최초 삽입이 아닐 시에는 삽입 전 가장 최신데이터의 시간(past_new_time) 이후부터 ~ 이전 태스크에서 적재된 후
+    # 최신데이터의 시간(new_time)까지 generate_series 범위로 선택하여 이 기간동안의 데이터 중 null값이 있거나 누락된 경우를 불러온다 (save_raw_data task에서 적재된 데이터 기간에 해당)
     else:
         logger.info("-----------------")
         query = text(
@@ -140,59 +144,106 @@ async def fill_missing_and_null_data(
         )
         return
 
-    # 선형보간법으로 누락된 데이터 및 null 값 채우기
+    """
+    이동평균으로 누락된 데이터 및 null 값 채우기
+
+
+    period : 얼마만큼의 기간으로 이동평균을 설정할지. 기준은 5분봉 일 때 1일치 이동평균을 기준으로 잡도록 설정하고
+    -> 간격이 줄어들수록 적은 기간으로, 늘어날수록 긴 기간으로 동적으로 설정되도록 적절하게 선정
+    num_data_points : 그 기간에 맞게 불러올 데이터 수
+    """
+    period = (minutes / 5) ** 0.5
+    num_data_points = int(period * 24 * 60) // minutes
+
+    current_time_dt = datetime.fromisoformat(current_time).replace(
+        minute=0, second=0, microsecond=0
+    )
+    # null 값이 없는 데이터만 가져오기
+    all_data_query = (
+        select(BtcOhlcv)
+        .filter(BtcOhlcv.time <= current_time_dt)
+        .filter(BtcOhlcv.open.isnot(None))
+        .filter(BtcOhlcv.high.isnot(None))
+        .filter(BtcOhlcv.low.isnot(None))
+        .filter(BtcOhlcv.close.isnot(None))
+        .filter(BtcOhlcv.volume.isnot(None))
+        .order_by(BtcOhlcv.time)
+    )
+    all_data_result = await session.execute(all_data_query)
+    all_data = all_data_result.scalars().all()
+
+    # 메모리에서 처리하기 위해 딕셔너리 형태로 데이터를 변환
+    data_dict = {d.time: d for d in all_data}
+
     for record in missing_or_null_data:
         missing_time = record[0]
-        prev_data = await session.execute(
-            select(BtcOhlcv)
-            .filter(BtcOhlcv.time < missing_time)
-            .order_by(BtcOhlcv.time.desc())
-            .limit(1)
+
+        # 이동평균 계산을 위한 데이터 가져오기
+        prev_data = [
+            data_dict[time] for time in sorted(data_dict) if time < missing_time
+        ][-num_data_points:]
+
+        open_avg = np.mean([d.open for d in prev_data])
+        high_avg = np.mean([d.high for d in prev_data])
+        low_avg = np.mean([d.low for d in prev_data])
+        close_avg = np.mean([d.close for d in prev_data])
+        volume_avg = np.mean([d.volume for d in prev_data])
+
+        logger.info(
+            f"moving average interpolated open value for {missing_time}: {open_avg}"
         )
-        prev_data = prev_data.scalars().first()
-
-        next_data = await session.execute(
-            select(BtcOhlcv)
-            .filter(BtcOhlcv.time > missing_time)
-            .order_by(BtcOhlcv.time.asc())
-            .limit(1)
+        logger.info(
+            f"moving average interpolated high value for {missing_time}: {high_avg}"
         )
-        next_data = next_data.scalars().first()
+        logger.info(
+            f"moving average interpolated low value for {missing_time}: {low_avg}"
+        )
+        logger.info(
+            f"moving average interpolated close value for {missing_time}: {close_avg}"
+        )
+        logger.info(
+            f"moving average interpolated volume value for {missing_time}: {volume_avg}"
+        )
 
-        if prev_data and next_data:
-            delta = (missing_time - prev_data.time) / (next_data.time - prev_data.time)
-            interpolated_open = prev_data.open + delta * (
-                next_data.open - prev_data.open
-            )
-            interpolated_high = prev_data.high + delta * (
-                next_data.high - prev_data.high
-            )
-            interpolated_low = prev_data.low + delta * (next_data.low - prev_data.low)
-            interpolated_close = prev_data.close + delta * (
-                next_data.close - prev_data.close
-            )
-            interpolated_volume = prev_data.volume + delta * (
-                next_data.volume - prev_data.volume
-            )
+        new_record = BtcPreprocessed(
+            time=missing_time,
+            open=int(open_avg),
+            high=int(high_avg),
+            low=int(low_avg),
+            close=int(close_avg),
+            volume=int(volume_avg),
+        )
+        session.add(new_record)
 
-            new_record = BtcPreprocessed(
-                time=missing_time,
-                open=interpolated_open,
-                high=interpolated_high,
-                low=interpolated_low,
-                close=interpolated_close,
-                volume=interpolated_volume,
-            )
-            session.add(new_record)
     end_time = time.time()
     interpol_time = end_time - start_time
     logger.info(f"interpolate time : {interpol_time:.4f} sec")
     await session.commit()
 
 
+# 테스트를 위한 함수
+async def insert_null_data(session: AsyncSession):
+    null_data = [
+        BtcOhlcv(
+            time=datetime(2024, 6, 15, 6, 0, 0) + timedelta(hours=i),
+            open=None,
+            high=None,
+            low=None,
+            close=None,
+            volume=None,
+        )
+        for i in range(10)
+    ]
+    session.add_all(null_data)
+    await session.commit()
+    logger.info("Inserted null data into btc_ohlcv")
+
+
 async def preprocess_data(context: dict) -> None:
     """
     XCom으로 받아온 변수 설명
+    db_uri : db주소
+    minutes : save_raw_data_API_fn 태스크에서 호출한 데이터가 몇분봉 데이터인지
     initial_insert : save_raw_data_API_fn 태스크에서 데이터를 적재할 때 최초 삽입시 True, 아닐시 False
     new_time : save_raw_data_API_fn 태스크에서 적재 후 db에 적재된 데이터 중 가장 최근시간
     past_new_time : save_raw_data_API_fn 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
@@ -215,10 +266,14 @@ async def preprocess_data(context: dict) -> None:
     new_time = context["new_time"]
     past_new_time = context["past_new_time"]
     current_time = context["current_time"]
+    minutes = context["minutes"]
 
     logger.info(f"initial_insert : {initial_insert}")
     logger.info(f"new_time : {new_time}")
     logger.info(f"past_new_time : {past_new_time}")
+
+    # 테스트용 new_time 설계
+    new_time = (datetime.fromisoformat(past_new_time) + timedelta(hours=10)).isoformat()
 
     # 데이터가 추가되지 않았을시에는 이 작업을 하지 않음
     if new_time is None:
@@ -234,8 +289,9 @@ async def preprocess_data(context: dict) -> None:
             logger.info("Creating btc_preprocessed table if not exists")
 
             async with AsyncScopedSession() as session:
+                await insert_null_data(session)
                 await fill_missing_and_null_data(
-                    session, conn, past_new_time, new_time, current_time
+                    session, conn, past_new_time, new_time, current_time, minutes
                 )
                 start_time_in = time.time()
                 if initial_insert:
@@ -303,13 +359,26 @@ async def preprocess_data(context: dict) -> None:
                             .on_conflict_do_update(  # excluded : 충돌시 제외된 값을 업데이트
                                 index_elements=["time"],
                                 set_={
-                                    "open": pg_insert(BtcPreprocessed).excluded.open,
-                                    "high": pg_insert(BtcPreprocessed).excluded.high,
-                                    "low": pg_insert(BtcPreprocessed).excluded.low,
-                                    "close": pg_insert(BtcPreprocessed).excluded.close,
-                                    "volume": pg_insert(
-                                        BtcPreprocessed
-                                    ).excluded.volume,
+                                    "open": func.coalesce(
+                                        pg_insert(BtcPreprocessed).excluded.open,
+                                        BtcPreprocessed.open,
+                                    ),
+                                    "high": func.coalesce(
+                                        pg_insert(BtcPreprocessed).excluded.high,
+                                        BtcPreprocessed.high,
+                                    ),
+                                    "low": func.coalesce(
+                                        pg_insert(BtcPreprocessed).excluded.low,
+                                        BtcPreprocessed.low,
+                                    ),
+                                    "close": func.coalesce(
+                                        pg_insert(BtcPreprocessed).excluded.close,
+                                        BtcPreprocessed.close,
+                                    ),
+                                    "volume": func.coalesce(
+                                        pg_insert(BtcPreprocessed).excluded.volume,
+                                        BtcPreprocessed.volume,
+                                    ),
                                 },
                             )
                         )
@@ -380,6 +449,7 @@ async def preprocess_data(context: dict) -> None:
 def preprocess_data_fn(**context) -> None:
     ti = context["ti"]
     db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
+    minutes = ti.xcom_pull(key="minutes", task_ids="save_raw_data_from_API_fn")
     initial_insert = ti.xcom_pull(
         key="initial_insert", task_ids="save_raw_data_from_API_fn"
     )
@@ -397,6 +467,7 @@ def preprocess_data_fn(**context) -> None:
         "new_time": new_time,
         "past_new_time": past_new_time,
         "current_time": current_time,
+        "minutes": minutes,
     }
 
     asyncio.run(preprocess_data(async_context))

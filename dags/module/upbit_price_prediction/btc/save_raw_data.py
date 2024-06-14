@@ -56,7 +56,9 @@ def check_remaining_requests(
 
 
 # 비동기적으로 Upbit API를 사용하여 비트코인 시세 데이터를 가져오는 함수
-async def fetch_ohlcv_data(session, market: str, to: str, count: int, retry=3):
+async def fetch_ohlcv_data(
+    session, market: str, to: str, count: int, minutes: int, retry=3
+):
     """
     Upbit API를 호출하여 OHLCV 데이터를 가져오는 함수
 
@@ -70,7 +72,7 @@ async def fetch_ohlcv_data(session, market: str, to: str, count: int, retry=3):
     Returns:
         list: OHLCV 데이터 목록
     """
-    url = f"https://api.upbit.com/v1/candles/minutes/60?market={market}&to={to}&count={count}"
+    url = f"https://api.upbit.com/v1/candles/minutes/{minutes}?market={market}&to={to}&count={count}"
     headers = {
         "Accept": "application/json",
         "Authorization": generate_jwt_token(
@@ -260,6 +262,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
         async with AsyncScopedSession() as session:
             most_recent_time = await get_most_recent_data_time(session)
             current_time = datetime.now() + timedelta(hours=9)
+            minutes = 60  # 몇 분 봉 데이터를 가져올지 설정
 
             # db에 데이터가 들어온적이 있다면 그대로 진행
             if most_recent_time:
@@ -279,10 +282,11 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
             time_diff = current_time - most_recent_time
             logger.info(f"time_diff: {time_diff}")
 
-            # 최초 삽입 여부와 현재시간을 XCom에 푸시
+            # 최초 삽입 여부와 현재시간, 몇분봉 인지를 XCom에 푸시
             ti = context["ti"]
             ti.xcom_push(key="initial_insert", value=initial_insert)
             ti.xcom_push(key="current_time", value=current_time.isoformat())
+            ti.xcom_push(key="minutes", value=minutes)
             get_time_before = await get_most_recent_data_time(session)
 
             # 최초삽입시에는 past_new_time이 의미가 없기 때문에 존재할 경우에만 적재전의 db의 최신데이터 시간을 Xcom에 푸시
@@ -304,6 +308,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
                     "KRW-BTC",
                     to_time.strftime("%Y-%m-%dT%H:%M:%S"),
                     200,
+                    minutes,
                 )
                 if not new_data:
                     break
