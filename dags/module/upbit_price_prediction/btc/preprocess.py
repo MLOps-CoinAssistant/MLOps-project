@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import logging
 import asyncio
 import uvloop
+import time
 
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -67,7 +68,7 @@ async def fill_missing_and_null_data(
     만약 누락된 데이터나 null값이 존재하지 않을시 즉시 함수를 종료시킵니다
     처리해야 할 데이터가 존재한다면 선형보간법을 적용하고 upsert방식으로 btc_preprocessed 테이블에 삽입합니다
     """
-
+    start_time = time.time()
     # 만약 존재하면 datetime으로 바꿔주고, 없을 시 None
     if past_new_time:
         past_new_time_plus_1_hour = (
@@ -183,6 +184,9 @@ async def fill_missing_and_null_data(
                 volume=interpolated_volume,
             )
             session.add(new_record)
+    end_time = time.time()
+    interpol_time = end_time - start_time
+    logger.info(f"interpolate time : {interpol_time:.4f} sec")
     await session.commit()
 
 
@@ -233,13 +237,13 @@ async def preprocess_data(context: dict) -> None:
                 await fill_missing_and_null_data(
                     session, conn, past_new_time, new_time, current_time
                 )
-
+                start_time_in = time.time()
                 if initial_insert:
                     # 초기 데이터 처리
                     logger.info("Initial data processing")
                     # SQLAlchemy Core API를 사용한 방식
                     # Core API는 내부적으로 최적화된 배치 처리 메커니즘을 사용할 수 있게 해주고 메모리 사용량도 줄어든다.
-                    # insert().from_select() 를 사용하여 단일 sql쿼리를 생성해서 db에 대한 네트워크 왕복을 줄여서 좀 더 효율적이다.
+                    # insert().from_select() 를 사용하여 단일 sql쿼리를 생성해서 db에 대한 네트워크 왕복을 줄여서 좀 더 효율적이다.(db내에 테이블에 있는 데이터를 이동할 때 유용)
                     logger.info(
                         "Inserting ALL DATA from btc_ohlcv to btc_preprocessed using Core API"
                     )
@@ -257,7 +261,18 @@ async def preprocess_data(context: dict) -> None:
                     )
                     await conn.execute(stmt)
                     await conn.commit()
+                    end_time_in = time.time()
+                    initial_insert_time = end_time_in - start_time_in
+                    logger.info(
+                        f"initial inserting time : {initial_insert_time:.4f} sec"
+                    )
                     logger.info("Data insertion completed.")
+
+                    # 삽입된 데이터의 개수 로깅
+                    count_stmt = select([func.count()]).select_from(BtcPreprocessed)
+                    result = await conn.execute(count_stmt)
+                    inserted_row_count = result.scalar()
+                    logger.info(f"Number of rows inserted: {inserted_row_count}")
 
                 else:
                     # 최초 삽입이 아니라면 airflow 스케줄링에 의한 작은 크기의 데이터들에 대한 처리작업 진행

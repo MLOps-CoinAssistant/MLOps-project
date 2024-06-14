@@ -138,6 +138,7 @@ async def insert_data_into_db(data: list, session, initial_insert: bool) -> None
 
                 result = await session.execute(stmt)
                 inserted_count += len(result.fetchall())
+
         else:
             for record in data:
                 stmt = (
