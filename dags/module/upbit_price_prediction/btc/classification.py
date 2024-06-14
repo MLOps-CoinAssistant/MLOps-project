@@ -1,45 +1,56 @@
-import pandas as pd
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from catboost import CatBoostClassifier, Pool
 from sklearn.metrics import accuracy_score, classification_report, f1_score
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-import logging
-from airflow.providers.postgres.hooks.postgres import PostgresHook
-import optuna
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import text
 from optuna.storages import RDBStorage
-import mlflow
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
 from info.connections import Connections
 from datetime import datetime
+import asyncio
+import logging
+import optuna
+import pandas as pd
+import mlflow
+import uvloop
 
+# uvloop를 기본 이벤트 루프로 설정
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def train_catboost_model_fn(
-    hook: PostgresHook = PostgresHook(
-        postgres_conn_id=Connections.POSTGRES_DEFAULT.value
-    ),
-    **context: dict,
-) -> None:
+async def load_data(engine) -> pd.DataFrame:
+    query = """
+        SELECT * FROM btc_preprocessed
+    """
+    # 이 파일에서는 비동기작업은 여기서 딱1번 하기 때문에 asyncscopedsession, sessionmaker등은 불필요
+    async with AsyncSession(engine) as session:
+        result = await session.execute(text(query))
+        df = pd.DataFrame(result.fetchall(), columns=result.keys())
+
+    return df
+
+
+def train_catboost_model_fn(**context: dict) -> None:
+
     study_and_experiment_name = "btc_catboost_alpha"
     mlflow.set_experiment(study_and_experiment_name)
     experiment = mlflow.get_experiment_by_name(study_and_experiment_name)
     experiment_id = experiment.experiment_id
     run_name = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+    ti = context["ti"]
+    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
     # 데이터 로드
-    engine = create_engine(hook.get_uri())
-    Query = """
-        SELECT * FROM btc_preprocessed
-    """
+    engine = create_async_engine(
+        db_uri.replace("postgresql", "postgresql+asyncpg"), future=True
+    )
 
-    with Session(bind=engine) as session:
-        result = session.execute(Query)
-        df = pd.DataFrame(result.all(), columns=result.keys())
+    df = asyncio.run(load_data(engine))
 
     X = df.drop(columns=["label"])
     y = df["label"]
@@ -130,24 +141,22 @@ def train_catboost_model_fn(
         except Exception as e:
             logger.error(f"Model registration failed: {str(e)}")
             raise
-
-        context["ti"].xcom_push(key="model_name", value=study_and_experiment_name)
-        context["ti"].xcom_push(key="run_id", value=run.info.run_id)
-        context["ti"].xcom_push(key="model_uri", value=model_uri)
-        context["ti"].xcom_push(key="eval_metric", value="f1_score")
-        context["ti"].xcom_push(
-            key="registered_model_version", value=registered_model.version
-        )
+        ti.xcom_push(key="model_name", value=study_and_experiment_name)
+        ti.xcom_push(key="run_id", value=run.info.run_id)
+        ti.xcom_push(key="model_uri", value=model_uri)
+        ti.xcom_push(key="eval_metric", value="f1_score")
+        ti.xcom_push(key="registered_model_version", value=registered_model.version)
         logger.info(
             f"Model trained and logged, run_id: {run.info.run_id}, model_uri: {model_uri}, registered_model_version: {registered_model.version}"
         )
 
 
 def create_model_version(**context: dict) -> None:
-    model_name: str = context["ti"].xcom_pull(key="model_name")
-    run_id = context["ti"].xcom_pull(key="run_id")
-    model_uri = context["ti"].xcom_pull(key="model_uri")
-    eval_metric = context["ti"].xcom_pull(key="eval_metric")
+    ti = context["ti"]
+    model_name: str = ti.xcom_pull(key="model_name")
+    run_id = ti.xcom_pull(key="run_id")
+    model_uri = ti.xcom_pull(key="model_uri")
+    eval_metric = ti.xcom_pull(key="eval_metric")
     client = MlflowClient()
 
     try:
@@ -161,14 +170,15 @@ def create_model_version(**context: dict) -> None:
         model_name, model_source, run_id, description=f"{eval_metric}: {current_metric}"
     )
 
-    context["ti"].xcom_push(key="model_version", value=model_version.version)
+    ti.xcom_push(key="model_version", value=model_version.version)
     logger.info(f"Model version created: {model_version.version}")
 
 
 def transition_model_stage(**context: dict) -> None:
-    model_name: str = context["ti"].xcom_pull(key="model_name")
-    version = context["ti"].xcom_pull(key="model_version")
-    eval_metric = context["ti"].xcom_pull(key="eval_metric")
+    ti = context["ti"]
+    model_name: str = ti.xcom_pull(key="model_name")
+    version = ti.xcom_pull(key="model_version")
+    eval_metric = ti.xcom_pull(key="eval_metric")
     client = MlflowClient()
 
     current_model = client.get_model_version(model_name, version)
@@ -200,5 +210,5 @@ def transition_model_stage(**context: dict) -> None:
             )
             production_model = current_model
 
-    context["ti"].xcom_push(key="production_version", value=production_model.version)
+    ti.xcom_push(key="production_version", value=production_model.version)
     logger.info(f"Production model deployed: version {production_model.version}")

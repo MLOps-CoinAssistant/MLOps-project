@@ -33,15 +33,14 @@ def create_table_fn(
 
     engine = create_engine(hook.get_uri())
     inspector = inspect(engine)
-
+    ti = context["ti"]
     if inspector.has_table("btc_ohlcv"):
         logger.info("Table 'btc_ohlcv' already exists.")
-
-        context["ti"].xcom_push(key="table_created", value=False)
-        context["ti"].xcom_push(key="db_uri", value=hook.get_uri())
+        ti.xcom_push(key="table_created", value=False)
+        ti.xcom_push(key="db_uri", value=hook.get_uri())
         raise AirflowSkipException("Table 'btc_ohlcv' already exists.")
     else:
         Base.metadata.create_all(engine)
         logger.info("Checked and created tables if not existing.")
-        context["ti"].xcom_push(key="table_created", value=True)
-        context["ti"].xcom_push(key="db_uri", value=hook.get_uri())
+        ti.xcom_push(key="table_created", value=True)
+        ti.xcom_push(key="db_uri", value=hook.get_uri())
