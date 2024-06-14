@@ -1,4 +1,3 @@
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 from sqlalchemy import Column, DateTime, Integer, select, func, text
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
@@ -7,7 +6,6 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import declarative_base, sessionmaker
-from info.connections import Connections
 from contextvars import ContextVar
 from datetime import datetime, timedelta
 import logging
@@ -196,9 +194,9 @@ async def preprocess_data(context: dict) -> None:
     past_new_time : save_raw_data_API_fn 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
     current_time : save_raw_data_API_fn 태스크에서 업비트에 데이터를 호출했을 당시의 시간
     """
-    hook = PostgresHook(postgres_conn_id=Connections.POSTGRES_DEFAULT.value)
+    db_uri = context["db_uri"]
     engine = create_async_engine(
-        hook.get_uri().replace("postgresql", "postgresql+asyncpg"), future=True
+        db_uri.replace("postgresql", "postgresql+asyncpg"), future=True
     )
     session_factory = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     # 비동기 함수들간에 세션을 안전하게 공유, 세션 자동생성/해제 하기 위해 사용. 세션 관리하기 좋고 코드의일관성 유지가능.
@@ -365,21 +363,21 @@ async def preprocess_data(context: dict) -> None:
 
 
 def preprocess_data_fn(**context) -> None:
-
-    initial_insert = context["ti"].xcom_pull(
+    ti = context["ti"]
+    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
+    initial_insert = ti.xcom_pull(
         key="initial_insert", task_ids="save_raw_data_from_API_fn"
     )
-    new_time = context["ti"].xcom_pull(
-        key="new_time", task_ids="save_raw_data_from_API_fn"
-    )
-    past_new_time = context["ti"].xcom_pull(
+    new_time = ti.xcom_pull(key="new_time", task_ids="save_raw_data_from_API_fn")
+    past_new_time = ti.xcom_pull(
         key="past_new_time", task_ids="save_raw_data_from_API_fn"
     )
-    current_time = context["ti"].xcom_pull(
+    current_time = ti.xcom_pull(
         key="current_time", task_ids="save_raw_data_from_API_fn"
     )
     # 비동기 함수 호출 시 전달할 context 생성(XCom은 JSON직렬화를 요구해서 그냥 쓸려고하면 비동기함수와는 호환이 안됨)
     async_context = {
+        "db_uri": db_uri,
         "initial_insert": initial_insert,
         "new_time": new_time,
         "past_new_time": past_new_time,
