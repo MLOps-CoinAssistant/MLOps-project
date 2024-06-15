@@ -205,7 +205,7 @@ async def delete_old_data(session: AsyncSession) -> None:
         delete_count = result.scalar()
         logger.info(f"Number of records to be deleted: {delete_count}")
 
-        delete_query = BtcOhlcv.__table__.delete().where(BtcOhlcv.time < threshold_kst)
+        delete_query = BtcOhlcv.__table__.delete().where(BtcOhlcv.time <= threshold_kst)
         await session.execute(delete_query)
         await session.commit()
         logger.info(f"Deleted {delete_count} old records from the database.")
@@ -262,7 +262,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
         async with AsyncScopedSession() as session:
             most_recent_time = await get_most_recent_data_time(session)
             current_time = datetime.now() + timedelta(hours=9)
-            minutes = 60  # 몇 분 봉 데이터를 가져올지 설정
+            minutes = 5  # 몇 분 봉 데이터를 가져올지 설정
 
             # db에 데이터가 들어온적이 있다면 그대로 진행
             if most_recent_time:
@@ -293,11 +293,11 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
             if get_time_before:
                 ti.xcom_push(key="past_new_time", value=get_time_before.isoformat())
 
-            if time_diff < timedelta(hours=1):
+            if time_diff < timedelta(minutes=5):
                 logger.info("Data is already up to date.")
                 return
 
-            data = []
+            data = set()
 
             to_time = current_time
 
@@ -312,20 +312,21 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
                 )
                 if not new_data:
                     break
-                data.extend(new_data)
+                new_data_set = {tuple(item.items()) for item in new_data}
+                data.update(new_data_set)
                 last_record_time = datetime.fromisoformat(
                     new_data[-1]["candle_date_time_kst"]
                 )
-                to_time = last_record_time - timedelta(minutes=60)
+                to_time = last_record_time - timedelta(minutes=5)
                 time_diff = to_time - most_recent_time
                 logger.info(
                     f"Collected {len(new_data)} records, time_diff: {time_diff}"
                 )
 
-            logger.info(f"initial collected records: {len(data)}")
+            logger.info(f"initial collected unique records: {len(data)}")
 
+            data = [dict(t) for t in data]
             await insert_data_into_db(data, session, initial_insert)
-
             count_total_result = await session.execute(
                 text("SELECT COUNT(*) FROM btc_ohlcv")
             )

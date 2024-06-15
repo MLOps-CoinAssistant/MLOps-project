@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, select, func, text
+from sqlalchemy import Column, DateTime, Integer, select, func, text, and_
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
@@ -73,9 +73,9 @@ async def fill_missing_and_null_data(
     """
     start_time = time.time()
     # 만약 존재하면 datetime으로 바꿔주고, 없을 시 None
-    if past_new_time:
-        past_new_time_plus_1_hour = (
-            datetime.fromisoformat(past_new_time) + timedelta(hours=1)
+    if past_new_time is not None:
+        past_new_time_plus = (
+            datetime.fromisoformat(past_new_time) + timedelta(minutes=5)
         ).isoformat()
     else:
         past_new_time = None
@@ -86,7 +86,7 @@ async def fill_missing_and_null_data(
         datetime.fromisoformat(current_time).replace(minute=0, second=0, microsecond=0)
     ).isoformat()
     one_year_ago = (
-        datetime.fromisoformat(current_time) - timedelta(days=365, hours=-1)
+        datetime.fromisoformat(new_time) - timedelta(days=365, minutes=-5)
     ).isoformat()
 
     logger.info(f"type of new_time : {type(new_time)}")
@@ -103,8 +103,8 @@ async def fill_missing_and_null_data(
             SELECT gs AS time, b.open, b.high, b.low, b.close, b.volume
             FROM generate_series(
                 '{one_year_ago}'::timestamp,
-                '{current_time}'::timestamp,
-                interval '1 hour'
+                '{new_time}'::timestamp,
+                interval '5 minutes'
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
             WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL OR b.volume = 0)
@@ -120,9 +120,9 @@ async def fill_missing_and_null_data(
             f"""
             SELECT gs AS time, b.open, b.high, b.low, b.close, b.volume
             FROM generate_series(
-                '{past_new_time_plus_1_hour}'::timestamp,
+                '{past_new_time_plus}'::timestamp,
                 '{new_time}'::timestamp,
-                interval '1 hour'
+                interval '5 minutes'
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
             WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL OR b.volume = 0)
@@ -162,11 +162,20 @@ async def fill_missing_and_null_data(
     all_data_query = (
         select(BtcOhlcv)
         .filter(BtcOhlcv.time <= current_time_dt)
-        .filter(BtcOhlcv.open.isnot(None))
-        .filter(BtcOhlcv.high.isnot(None))
-        .filter(BtcOhlcv.low.isnot(None))
-        .filter(BtcOhlcv.close.isnot(None))
-        .filter(BtcOhlcv.volume.isnot(None))
+        .filter(
+            and_(
+                BtcOhlcv.open.isnot(None),
+                BtcOhlcv.high.isnot(None),
+                BtcOhlcv.low.isnot(None),
+                BtcOhlcv.close.isnot(None),
+                BtcOhlcv.volume.isnot(None),
+                BtcOhlcv.open != float("nan"),
+                BtcOhlcv.high != float("nan"),
+                BtcOhlcv.low != float("nan"),
+                BtcOhlcv.close != float("nan"),
+                BtcOhlcv.volume != float("nan"),
+            )
+        )
         .order_by(BtcOhlcv.time)
     )
     all_data_result = await session.execute(all_data_query)
@@ -184,6 +193,8 @@ async def fill_missing_and_null_data(
         prev_data = [
             data_dict[time] for time in sorted(data_dict) if time < missing_time
         ][-num_data_points:]
+
+        # prev_data = [d for d in prev_data if not any(np.isnan([d.open, d.high, d.low, d.close, d.volume]))]
 
         open_avg = np.mean([d.open for d in prev_data])
         high_avg = np.mean([d.high for d in prev_data])
