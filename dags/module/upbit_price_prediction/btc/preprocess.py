@@ -54,7 +54,7 @@ async def fill_missing_and_null_data(
     session: AsyncSession,
     conn: AsyncSession,
     past_new_time: str,
-    new_time,
+    new_time: str,
     current_time: str,
     minutes: int,
 ) -> None:
@@ -236,7 +236,7 @@ async def fill_missing_and_null_data(
     await session.commit()
 
 
-# 테스트를 위한 함수
+# fill_missing_and_null_data 테스트를 위한 함수
 async def insert_null_data(session: AsyncSession):
     null_data = [
         BtcOhlcv(
@@ -288,7 +288,7 @@ async def preprocess_data(context: dict) -> None:
     logger.info(f"past_new_time : {past_new_time}")
 
     # 테스트용 new_time 설계
-    new_time = (datetime.fromisoformat(past_new_time) + timedelta(hours=10)).isoformat()
+    # new_time = (datetime.fromisoformat(past_new_time) + timedelta(hours=10)).isoformat()
 
     # 데이터가 추가되지 않았을시에는 이 작업을 하지 않음
     if new_time is None:
@@ -304,7 +304,7 @@ async def preprocess_data(context: dict) -> None:
             logger.info("Creating btc_preprocessed table if not exists")
 
             async with AsyncScopedSession() as session:
-                await insert_null_data(session)
+                # await insert_null_data(session)
                 await fill_missing_and_null_data(
                     session, conn, past_new_time, new_time, current_time, minutes
                 )
@@ -328,7 +328,7 @@ async def preprocess_data(context: dict) -> None:
                             BtcOhlcv.low,
                             BtcOhlcv.close,
                             BtcOhlcv.volume,
-                        ),
+                        ).order_by(BtcOhlcv.time),
                     )
                     await conn.execute(stmt)
                     await conn.commit()
@@ -353,13 +353,23 @@ async def preprocess_data(context: dict) -> None:
 
                     # 이전 태스크에 적재된 범위 내의 모든 데이터를 삽입
                     new_data = await session.execute(
-                        select(BtcOhlcv).filter(
+                        select(BtcOhlcv)
+                        .filter(
                             BtcOhlcv.time > text(f"'{past_new_time}'::timestamp"),
                             BtcOhlcv.time <= text(f"'{new_time}'::timestamp"),
                         )
+                        .order_by(BtcOhlcv.time)
                     )
                     new_data = new_data.scalars().all()
 
+                    """
+                    pg_insert : PostgreSQL의 INSERT 명령어를 SQLAlchemy에서 사용할 수 있도록 해줌. 삽입 작업을 수행하기 위한 객체
+                    values : 삽입할 데이터를 지정 (ohlcv)
+                    coalesce : null이 아닌 첫번째 값을 반환.
+                               여기서는 pg_insert(BtcPreprocessed).excluded 와 이미 존재하는 값(BtcPreprocessed) 중 NULL이 아닌 값을 선택
+                    excluded : ON CONFLICT 절에서 사용되는 키워드로 , 충돌이 발생한 경우 새로운 값을 나타냄.
+                               여기서는 on_conflict_do_update로 새로운값으로 업데이트(upsert)
+                    """
                     for data in new_data:
                         stmt = (
                             pg_insert(BtcPreprocessed)
@@ -371,7 +381,7 @@ async def preprocess_data(context: dict) -> None:
                                 close=data.close,
                                 volume=data.volume,
                             )
-                            .on_conflict_do_update(  # excluded : 충돌시 제외된 값을 업데이트
+                            .on_conflict_do_update(
                                 index_elements=["time"],
                                 set_={
                                     "open": func.coalesce(
@@ -404,8 +414,9 @@ async def preprocess_data(context: dict) -> None:
                 logger.info(
                     "Updating labels 1 or 0 for all entries in btc_preprocessed"
                 )
-                # 상승:1, 하락:0 으로 라벨링
+
                 await conn.execute(
+                    # 상승:1, 하락:0 으로 라벨링
                     # LAG(close) OVER (ORDER BY time) : time정렬된 데이터에서 현재 데이터의 이전close값을 가져옴
                     # 이것을 현재 close 값이랑 비교해서 1, 0 으로 라벨링
                     text(
@@ -428,19 +439,12 @@ async def preprocess_data(context: dict) -> None:
                 await conn.commit()
                 logger.info("Labels updated successfully for all entries")
 
-                # CLUSTER명령어로 primary key를 기준으로 정렬.
+                # 삽입된 데이터를 시간순으로 정렬
                 await session.execute(
-                    text(
-                        """
-                        ALTER TABLE btc_preprocessed
-                        CLUSTER ON btc_preprocessed_pkey;
-                        """
-                    )
+                    select(BtcPreprocessed).order_by(BtcPreprocessed.time)
                 )
-                await session.commit()
-                logger.info(
-                    "Sorting btc_preprocessed table by time in ascending order using CLUSTER"
-                )
+
+                logger.info("Sorting btc_preprocessed table by time")
                 count_final = await session.scalar(
                     select(func.count()).select_from(BtcPreprocessed)
                 )
@@ -458,10 +462,8 @@ async def preprocess_data(context: dict) -> None:
         await engine.dispose()
 
 
-# context["ti"].xcom_push(key="preprocessed", value=True)
-
-
 def preprocess_data_fn(**context) -> None:
+    s = time.time()
     ti = context["ti"]
     db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
     minutes = ti.xcom_pull(key="minutes", task_ids="save_raw_data_from_API_fn")
@@ -486,3 +488,6 @@ def preprocess_data_fn(**context) -> None:
     }
 
     asyncio.run(preprocess_data(async_context))
+    e = time.time()
+    es = e - s
+    logger.info(f"Total working time : {es:.4f} sec")

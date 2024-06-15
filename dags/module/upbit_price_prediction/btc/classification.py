@@ -14,6 +14,7 @@ import optuna
 import pandas as pd
 import mlflow
 import uvloop
+import time
 
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -36,7 +37,7 @@ async def load_data(engine) -> pd.DataFrame:
 
 
 def train_catboost_model_fn(**context: dict) -> None:
-
+    s = time.time()
     study_and_experiment_name = "btc_catboost_alpha"
     mlflow.set_experiment(study_and_experiment_name)
     experiment = mlflow.get_experiment_by_name(study_and_experiment_name)
@@ -149,9 +150,13 @@ def train_catboost_model_fn(**context: dict) -> None:
         logger.info(
             f"Model trained and logged, run_id: {run.info.run_id}, model_uri: {model_uri}, registered_model_version: {registered_model.version}"
         )
+        e = time.time()
+        es = e - s
+        logger.info(f"Total working time : {es:.4f} sec")
 
 
 def create_model_version(**context: dict) -> None:
+    s = time.time()
     ti = context["ti"]
     model_name: str = ti.xcom_pull(key="model_name")
     run_id = ti.xcom_pull(key="run_id")
@@ -172,9 +177,13 @@ def create_model_version(**context: dict) -> None:
 
     ti.xcom_push(key="model_version", value=model_version.version)
     logger.info(f"Model version created: {model_version.version}")
+    e = time.time()
+    es = e - s
+    logger.info(f"Total working time : {es:.4f} sec")
 
 
 def transition_model_stage(**context: dict) -> None:
+    s = time.time()
     ti = context["ti"]
     model_name: str = ti.xcom_pull(key="model_name")
     version = ti.xcom_pull(key="model_version")
@@ -212,3 +221,6 @@ def transition_model_stage(**context: dict) -> None:
 
     ti.xcom_push(key="production_version", value=production_model.version)
     logger.info(f"Production model deployed: version {production_model.version}")
+    e = time.time()
+    es = e - s
+    logger.info(f"Total working time : {es:.4f} sec")
