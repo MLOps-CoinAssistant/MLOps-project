@@ -107,7 +107,7 @@ async def fill_missing_and_null_data(
                 interval '1 hour'
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
-            WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL)
+            WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL OR b.volume = 0)
             AND gs <= '{new_time}'::timestamp
             """
         )
@@ -125,7 +125,7 @@ async def fill_missing_and_null_data(
                 interval '1 hour'
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
-            WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL)
+            WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL OR b.volume = 0)
             AND gs > '{past_new_time}'::timestamp
             """
         )
@@ -319,17 +319,21 @@ async def preprocess_data(context: dict) -> None:
                         "Inserting ALL DATA from btc_ohlcv to btc_preprocessed using Core API"
                     )
 
-                    stmt = pg_insert(BtcPreprocessed).from_select(
-                        ["time", "open", "high", "low", "close", "volume"],
-                        select(
-                            BtcOhlcv.time,
-                            BtcOhlcv.open,
-                            BtcOhlcv.high,
-                            BtcOhlcv.low,
-                            BtcOhlcv.close,
-                            BtcOhlcv.volume,
-                        ).order_by(BtcOhlcv.time),
-                    )
+                    stmt = (
+                        pg_insert(BtcPreprocessed)
+                        .from_select(
+                            ["time", "open", "high", "low", "close", "volume"],
+                            select(
+                                BtcOhlcv.time,
+                                BtcOhlcv.open,
+                                BtcOhlcv.high,
+                                BtcOhlcv.low,
+                                BtcOhlcv.close,
+                                BtcOhlcv.volume,
+                            ).order_by(BtcOhlcv.time),
+                        )
+                        .on_conflict_do_nothing()
+                    )  # fill_missing_and_null_data함수에서 처리된 데이터를 btc_prerpocessed에 미리 넣고, btc_ohlcv를 가져오는 형태이므로 충돌시 업데이트를 하지 않음.
                     await conn.execute(stmt)
                     await conn.commit()
                     end_time_in = time.time()
