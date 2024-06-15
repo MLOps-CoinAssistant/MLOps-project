@@ -174,6 +174,8 @@ async def fill_missing_and_null_data(
 
     # 메모리에서 처리하기 위해 딕셔너리 형태로 데이터를 변환
     data_dict = {d.time: d for d in all_data}
+    noise_factor = 0.3  # 1시간봉 기준 0.3이 적당하다고 판단. 저 작은 분봉 데이터를 사용하게되면 좀 더 낮춰도 될듯하다
+    # 낮췄을 때는 좀 더 변동성이 클 것이고 이동평균에 사용되는 데이터갯수도 많아지므로 낮춰서 변동성을 좀 더 줄이고 원래패턴과 유사하도록 설정
 
     for record in missing_or_null_data:
         missing_time = record[0]
@@ -188,6 +190,19 @@ async def fill_missing_and_null_data(
         low_avg = np.mean([d.low for d in prev_data])
         close_avg = np.mean([d.close for d in prev_data])
         volume_avg = np.mean([d.volume for d in prev_data])
+
+        open_std = np.std([d.open for d in prev_data])
+        high_std = np.std([d.high for d in prev_data])
+        low_std = np.std([d.low for d in prev_data])
+        close_std = np.std([d.close for d in prev_data])
+        volume_std = np.std([d.volume for d in prev_data])
+
+        # 표준편차의 noise_factor만큼의 비율만큼 랜덤으로 노이즈가 끼게하여 연속으로 존재하는 결측치가 같은값으로 대체되지 않도록 함
+        open_avg += np.random.normal(0, open_std * noise_factor)
+        high_avg += np.random.normal(0, high_std * noise_factor)
+        low_avg += np.random.normal(0, low_std * noise_factor)
+        close_avg += np.random.normal(0, close_std * noise_factor)
+        volume_avg += np.random.normal(0, volume_std * noise_factor)
 
         logger.info(
             f"moving average interpolated open value for {missing_time}: {open_avg}"
@@ -225,7 +240,7 @@ async def fill_missing_and_null_data(
 async def insert_null_data(session: AsyncSession):
     null_data = [
         BtcOhlcv(
-            time=datetime(2024, 6, 15, 6, 0, 0) + timedelta(hours=i),
+            time=datetime(2024, 6, 15, 19, 0, 0) + timedelta(hours=i),
             open=None,
             high=None,
             low=None,
