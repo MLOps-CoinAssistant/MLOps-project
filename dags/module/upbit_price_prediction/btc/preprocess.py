@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, select, func, text, and_
+from sqlalchemy import Column, DateTime, Integer, Float, select, func, text, and_
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import declarative_base, sessionmaker
 from contextvars import ContextVar
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 
 import numpy as np
 import logging
@@ -32,7 +33,7 @@ class BtcOhlcv(Base):
     high = Column(Integer)
     low = Column(Integer)
     close = Column(Integer)
-    volume = Column(Integer)
+    volume = Column(Float)
 
 
 class BtcPreprocessed(Base):
@@ -42,12 +43,39 @@ class BtcPreprocessed(Base):
     high = Column(Integer)
     low = Column(Integer)
     close = Column(Integer)
-    volume = Column(Integer)
+    volume = Column(Float)
     label = Column(Integer)
 
 
 # ContextVar를 사용하여 세션을 관리(비동기 함수간에 컨텍스트를 안전하게 전달하도록 해줌. 세션을 여러 코루틴간에 공유 가능)
 session_context = ContextVar("session_context", default=None)
+
+
+# 현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
+async def delete_old_data(session: AsyncSession) -> None:
+    try:
+        threshold_date = datetime.now() - relativedelta(days=365)
+        threshold_kst = threshold_date + timedelta(hours=9)
+        now = datetime.now() + timedelta(hours=9)
+        logger.info(f"now_kst : {now}")
+        logger.info(f"Threshold date for deletion: {threshold_kst}")
+
+        # 디버그를 위해 삭제할 데이터의 개수를 먼저 확인
+        count_query = select(func.count()).where(BtcPreprocessed.time < threshold_kst)
+        result = await session.execute(count_query)
+        delete_count = result.scalar()
+        logger.info(f"Number of records to be deleted: {delete_count}")
+
+        delete_query = BtcPreprocessed.__table__.delete().where(
+            BtcPreprocessed.time < threshold_kst
+        )
+        await session.execute(delete_query)
+        await session.commit()
+        logger.info(f"Deleted {delete_count} old records from the database.")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Failed to delete old data: {e}")
+        raise
 
 
 async def fill_missing_and_null_data(
@@ -83,10 +111,10 @@ async def fill_missing_and_null_data(
     # current time : 정각의 시간을 필요로 하기 때문에 시간 밑으로는 버림
     # one_year_ago : generate_series로 current_time을 기준으로 과거 1년치의 데이터를 가져오기 위한 기간설정
     current_time = (
-        datetime.fromisoformat(current_time).replace(minute=0, second=0, microsecond=0)
+        datetime.fromisoformat(current_time).replace(second=0, microsecond=0)
     ).isoformat()
     one_year_ago = (
-        datetime.fromisoformat(new_time) - timedelta(days=365, minutes=-5)
+        datetime.fromisoformat(new_time) - relativedelta(days=365, minutes=-5)
     ).isoformat()
 
     logger.info(f"type of new_time : {type(new_time)}")
@@ -103,12 +131,12 @@ async def fill_missing_and_null_data(
             SELECT gs AS time, b.open, b.high, b.low, b.close, b.volume
             FROM generate_series(
                 '{one_year_ago}'::timestamp,
-                '{new_time}'::timestamp,
+                '{current_time}'::timestamp,
                 interval '5 minutes'
             ) AS gs
             LEFT JOIN btc_ohlcv b ON gs = b.time
             WHERE (b.time IS NULL OR b.open IS NULL OR b.high IS NULL OR b.low IS NULL OR b.close IS NULL OR b.volume IS NULL OR b.volume = 0)
-            AND gs <= '{new_time}'::timestamp
+            AND gs <= '{current_time}'::timestamp
             """
         )
 
@@ -237,7 +265,7 @@ async def fill_missing_and_null_data(
             high=int(high_avg),
             low=int(low_avg),
             close=int(close_avg),
-            volume=int(volume_avg),
+            volume=volume_avg,
         )
         session.add(new_record)
 
@@ -248,7 +276,7 @@ async def fill_missing_and_null_data(
 
 
 # fill_missing_and_null_data 테스트를 위한 함수
-async def insert_null_data(session: AsyncSession):
+async def insert_null_data(session: AsyncSession) -> None:
     null_data = [
         BtcOhlcv(
             time=datetime(2024, 6, 15, 19, 0, 0) + timedelta(hours=i),
@@ -423,8 +451,13 @@ async def preprocess_data(context: dict) -> None:
                             )
                         )
                         await session.execute(stmt)
+
                     await session.commit()
                     logger.info(f"Data insertion completed. counts:{len(new_data)}")
+
+                # 1년지난 데이터 삭제
+                await delete_old_data(session)
+                await session.commit()
 
                 logger.info(
                     "Updating labels 1 or 0 for all entries in btc_preprocessed"

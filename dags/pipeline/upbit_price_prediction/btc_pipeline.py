@@ -24,7 +24,7 @@ from dags.module.upbit_price_prediction.btc.classification import (
 @dag(
     schedule_interval="*/5 * * * *",  # 시작시간을 5의배수분으로 정하고 시작 (utc기준)
     start_date=datetime(2024, 6, 15, 21, 50),
-    catchup=True,  # 이전 실행은 무시합니다.
+    catchup=False,
     default_args={
         "owner": "ChaCoSpoons",
         "retries": 3,
@@ -33,7 +33,7 @@ from dags.module.upbit_price_prediction.btc.classification import (
     },
     tags=["upbit pipeline"],
 )
-def btc_price_prediction_pipeline2():
+def btc_price_prediction_pipeline():
     start_task = EmptyOperator(task_id="start_task")
 
     delay_task = PythonOperator(
@@ -107,4 +107,4 @@ def btc_price_prediction_pipeline2():
     ] >> failure_email
 
 
-btc_price_prediction_pipeline2()
+btc_price_prediction_pipeline()

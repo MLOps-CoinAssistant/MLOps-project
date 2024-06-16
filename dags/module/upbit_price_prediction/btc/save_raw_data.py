@@ -56,7 +56,7 @@ def check_remaining_requests(
     return None, None
 
 
-async def manage_rate_limits(headers: Dict[str, str]):
+async def manage_rate_limits(headers: Dict[str, str]) -> None:
     min_req, sec_req = check_remaining_requests(headers)
     if min_req is not None and sec_req is not None:
         if sec_req <= 2:
@@ -74,7 +74,7 @@ async def manage_rate_limits(headers: Dict[str, str]):
 # 비동기적으로 Upbit API를 사용하여 비트코인 시세 데이터를 가져오는 함수
 async def fetch_ohlcv_data(
     session, market: str, to: str, count: int, minutes: int, retry=5
-):
+) -> Tuple[list, Dict[str, str]]:
     """
     Upbit API를 호출하여 OHLCV 데이터를 가져오는 함수
 
@@ -119,7 +119,9 @@ async def fetch_ohlcv_data(
 
 
 # 데이터베이스에 데이터를 삽입하는 함수
-async def insert_data_into_db(data: list, session, initial_insert: bool) -> None:
+async def insert_data_into_db(
+    data: list, session: AsyncSession, initial_insert: bool
+) -> None:
     try:
         # 최적화를 위해 cpu, 메모리사용량, 속도 테스트
         start_time = time.time()
@@ -279,7 +281,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
 
         async with AsyncScopedSession() as session:
             most_recent_time = await get_most_recent_data_time(session)
-            current_time = datetime.now() + timedelta(hours=9)
+            current_time = datetime.now() + relativedelta(hours=9)
             minutes = 5  # 몇 분 봉 데이터를 가져올지 설정
 
             # db에 데이터가 들어온적이 있다면 그대로 진행
@@ -294,7 +296,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
                 logger.info(
                     f"No recent data found, setting most_recent_time to one year ago from current_time"
                 )
-                most_recent_time = current_time - timedelta(days=365)
+                most_recent_time = current_time - relativedelta(days=365)
                 initial_insert = True
 
             time_diff = current_time - most_recent_time
