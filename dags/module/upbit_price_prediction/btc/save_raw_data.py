@@ -1,5 +1,6 @@
 from dags.module.upbit_price_prediction.btc.create_table import BtcOhlcv
 
+from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import (
@@ -55,10 +56,25 @@ def check_remaining_requests(
     return None, None
 
 
+async def manage_rate_limits(headers: Dict[str, str]) -> None:
+    min_req, sec_req = check_remaining_requests(headers)
+    if min_req is not None and sec_req is not None:
+        if sec_req <= 2:
+            logger.info(
+                f"Approaching rate limit. Waiting for 0.1 second. Remaining sec requests: {sec_req}"
+            )
+            await asyncio.sleep(0.1)
+        elif min_req <= 10:
+            logger.info(
+                f"Approaching minute limit. Waiting for 0.5 seconds. Remaining min requests: {min_req}"
+            )
+            await asyncio.sleep(0.5)
+
+
 # 비동기적으로 Upbit API를 사용하여 비트코인 시세 데이터를 가져오는 함수
 async def fetch_ohlcv_data(
-    session, market: str, to: str, count: int, minutes: int, retry=3
-):
+    session, market: str, to: str, count: int, minutes: int, retry=5
+) -> Tuple[list, Dict[str, str]]:
     """
     Upbit API를 호출하여 OHLCV 데이터를 가져오는 함수
 
@@ -80,13 +96,13 @@ async def fetch_ohlcv_data(
         ),
     }
     backoff = 1
-    for attempt in range(retry):
+    for _ in range(retry):
         try:
             async with session.get(url, headers=headers) as response:
                 response.raise_for_status()
                 data = await response.json()
                 if isinstance(data, list):
-                    return data
+                    return data, response.headers
                 else:
                     logger.error(f"Unexpected response format: {data}")
         except aiohttp.ClientError as e:
@@ -99,11 +115,13 @@ async def fetch_ohlcv_data(
             else:
                 logger.error(f"API request failed: {e}")
                 break
-    return []
+    return [], {}
 
 
 # 데이터베이스에 데이터를 삽입하는 함수
-async def insert_data_into_db(data: list, session, initial_insert: bool) -> None:
+async def insert_data_into_db(
+    data: list, session: AsyncSession, initial_insert: bool
+) -> None:
     try:
         # 최적화를 위해 cpu, 메모리사용량, 속도 테스트
         start_time = time.time()
@@ -195,8 +213,10 @@ async def insert_data_into_db(data: list, session, initial_insert: bool) -> None
 # 현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
 async def delete_old_data(session: AsyncSession) -> None:
     try:
-        threshold_date = datetime.now() - timedelta(days=365)
+        threshold_date = datetime.now() - relativedelta(days=365)
         threshold_kst = threshold_date + timedelta(hours=9)
+        now = datetime.now() + timedelta(hours=9)
+        logger.info(f"now_kst : {now}")
         logger.info(f"Threshold date for deletion: {threshold_kst}")
 
         # 디버그를 위해 삭제할 데이터의 개수를 먼저 확인
@@ -261,8 +281,8 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
 
         async with AsyncScopedSession() as session:
             most_recent_time = await get_most_recent_data_time(session)
-            current_time = datetime.now() + timedelta(hours=9)
-            minutes = 60  # 몇 분 봉 데이터를 가져올지 설정
+            current_time = datetime.now() + relativedelta(hours=9)
+            minutes = 5  # 몇 분 봉 데이터를 가져올지 설정
 
             # db에 데이터가 들어온적이 있다면 그대로 진행
             if most_recent_time:
@@ -276,7 +296,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
                 logger.info(
                     f"No recent data found, setting most_recent_time to one year ago from current_time"
                 )
-                most_recent_time = current_time - timedelta(days=365)
+                most_recent_time = current_time - relativedelta(days=365)
                 initial_insert = True
 
             time_diff = current_time - most_recent_time
@@ -293,44 +313,108 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
             if get_time_before:
                 ti.xcom_push(key="past_new_time", value=get_time_before.isoformat())
 
-            if time_diff < timedelta(hours=1):
+            if time_diff < timedelta(minutes=5):
                 logger.info("Data is already up to date.")
                 return
 
-            data = []
+            """
+            업비트에서 API호출해서 데이터 가져오는 코드 설명
 
+            tasks리스트에 호출해서 받아온 데이터를 저장해놓고 time_diff를 줄여나가면서 asyncio.gather에 의해 비동기로 병렬처리합니다
+            for문에서는 result(결과데이터), headers(헤더) 를 순회합니다
+            if result: 각 작업결과에서 데이터를 추출하고 이를 data에 업데이트합니다(data는 set형태라 중복방지)
+            그 후 마지막 데이터를 기준으로 시간을 업데이트합니다 (last_record_time)
+            manage_rate_limits함수를 호출해서 업비트에서 공식적으로 제공하는 요청수 확인 코드를 활용해서 요청수를 확인하고 필요시 잠깐 대기시킵니다
+            비동기로 빠르게 처리되면서 시간이 줄어들기 때문에 while문에서 처리되지 않은 작업은 if tasks:에서 진행됩니다.
+            그럼에도 불구하고 데이터가 온전히 들어오지 못하는 경우가 있어서 final_data_time~ 이후 구문을 진행 (계속 같은 방식)
+
+            """
+            data = set()
             to_time = current_time
-
+            tasks = []
+            st = time.time()
             while time_diff > timedelta(0):
                 logger.info(f"Fetching data up to {to_time}")
-                new_data = await fetch_ohlcv_data(
+                task = fetch_ohlcv_data(
                     aiohttp_session,
                     "KRW-BTC",
                     to_time.strftime("%Y-%m-%dT%H:%M:%S"),
                     200,
                     minutes,
                 )
-                if not new_data:
-                    break
-                data.extend(new_data)
-                last_record_time = datetime.fromisoformat(
-                    new_data[-1]["candle_date_time_kst"]
-                )
-                to_time = last_record_time - timedelta(minutes=60)
+                tasks.append(task)
+                last_record_time = to_time - timedelta(minutes=200 * minutes)
+                to_time = last_record_time - timedelta(minutes=5)
                 time_diff = to_time - most_recent_time
-                logger.info(
-                    f"Collected {len(new_data)} records, time_diff: {time_diff}"
+
+                if (
+                    len(tasks) >= 10
+                ):  # 업비트 open api 의 초당 10개의 요청 제한에 맞추기 위해
+                    results = await asyncio.gather(*tasks)
+                    for result, headers in results:
+                        if result:
+                            new_data_set = {tuple(item.items()) for item in result}
+                            data.update(new_data_set)
+
+                    last_record_time = datetime.fromisoformat(
+                        results[-1][0][-1]["candle_date_time_kst"]
+                    )
+                    to_time = last_record_time - timedelta(minutes=5)
+                    time_diff = to_time - most_recent_time
+                    await manage_rate_limits(headers)  # 남은 요청 수 관리
+                    tasks = []
+
+            if tasks:  # 남은 태스크 처리
+                results = await asyncio.gather(*tasks)
+                for result, headers in results:
+                    if result:
+                        new_data_set = {tuple(item.items()) for item in result}
+                        data.update(new_data_set)
+                last_record_time = datetime.fromisoformat(
+                    results[-1][0][-1]["candle_date_time_kst"]
                 )
+                to_time = last_record_time - timedelta(minutes=5)
+                time_diff = to_time - most_recent_time
+                await manage_rate_limits(headers)
 
-            logger.info(f"initial collected records: {len(data)}")
+            # 부족한 데이터 보완
+            final_data_time = datetime.fromisoformat(
+                results[-1][0][-1]["candle_date_time_kst"]
+            )
+            while final_data_time > most_recent_time:
+                logger.info(f"Fetching additional data up to {final_data_time}")
+                additional_results, headers = await fetch_ohlcv_data(
+                    aiohttp_session,
+                    "KRW-BTC",
+                    final_data_time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    200,
+                    minutes,
+                )
+                if additional_results:
+                    new_data_set = {tuple(item.items()) for item in additional_results}
+                    data.update(new_data_set)
+                    # 마지막 데이터 시간 업데이트
+                    final_data_time = datetime.fromisoformat(
+                        additional_results[-1]["candle_date_time_kst"]
+                    ) - timedelta(minutes=5)
+                else:
+                    break
+                await manage_rate_limits(headers)
 
+            et = time.time()
+            etst = et - st
+            logger.info(f"Total API request time : {etst:.2f} sec")
+            logger.info(f"initial collected unique records: {len(data)}")
+            data = [dict(t) for t in data]
+
+            # 데이터를 db에 삽입
             await insert_data_into_db(data, session, initial_insert)
-
             count_total_result = await session.execute(
                 text("SELECT COUNT(*) FROM btc_ohlcv")
             )
             count_total = count_total_result.scalar()
             logger.info(f"Total collected records before delete: {count_total}")
+
             # 데이터 삽입 후 365일이 지난 데이터를 삭제
             await delete_old_data(session)
 

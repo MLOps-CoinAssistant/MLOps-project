@@ -1,6 +1,6 @@
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from info.connections import Connections
-from sqlalchemy import create_engine, Column, DateTime, Integer, inspect
+from sqlalchemy import create_engine, Column, DateTime, Integer, inspect, Float
 from sqlalchemy.orm import declarative_base
 from airflow.exceptions import AirflowSkipException
 import logging
@@ -19,7 +19,7 @@ class BtcOhlcv(Base):
     high = Column(Integer)
     low = Column(Integer)
     close = Column(Integer)
-    volume = Column(Integer)
+    volume = Column(Float)
 
 
 def create_table_fn(

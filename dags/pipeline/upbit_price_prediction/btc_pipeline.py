@@ -3,6 +3,7 @@ from airflow.models import Variable
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
+from dags.module.upbit_price_prediction.btc.delay import delay_start
 from dags.module.upbit_price_prediction.btc.create_table import create_table_fn
 from dags.module.upbit_price_prediction.btc.save_raw_data import (
     save_raw_data_from_API_fn,
@@ -21,9 +22,9 @@ from dags.module.upbit_price_prediction.btc.classification import (
 
 
 @dag(
-    schedule_interval="2 * * * *",  # 매 시간 실행
-    start_date=datetime(2024, 5, 30),
-    catchup=True,  # 이전 실행은 무시합니다.
+    schedule_interval="*/5 * * * *",  # 시작시간을 5의배수분으로 정하고 시작 (utc기준)
+    start_date=datetime(2024, 6, 15, 21, 50),
+    catchup=False,
     default_args={
         "owner": "ChaCoSpoons",
         "retries": 3,
@@ -34,6 +35,11 @@ from dags.module.upbit_price_prediction.btc.classification import (
 )
 def btc_price_prediction_pipeline():
     start_task = EmptyOperator(task_id="start_task")
+
+    delay_task = PythonOperator(
+        task_id="delay_start",
+        python_callable=delay_start,
+    )
 
     create_table_task = PythonOperator(
         task_id="create_table_fn",
@@ -78,6 +84,7 @@ def btc_price_prediction_pipeline():
 
     (
         start_task
+        >> delay_task
         >> create_table_task
         >> save_data_task
         >> preprocess_task
@@ -89,6 +96,7 @@ def btc_price_prediction_pipeline():
     end_task >> success_email
 
     [
+        delay_task,
         create_table_task,
         save_data_task,
         preprocess_task,
