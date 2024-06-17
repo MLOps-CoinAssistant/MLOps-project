@@ -69,14 +69,14 @@ def train_catboost_model_fn(**context: dict) -> None:
         params = {
             "iterations": trial.suggest_int("iterations", 100, 1000),
             "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True),
-            "depth": trial.suggest_int("depth", 4, 10),
+            "depth": trial.suggest_int("depth", 6, 12),
             "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1e-5, 10, log=True),
-            "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 1.0),
-            "random_strength": trial.suggest_float(
-                "random_strength", 1e-5, 10, log=True
-            ),
-            "od_type": "Iter",
-            "od_wait": 100,
+            "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 0.1), # bagging_temperature를 0에 가깝게 설정하여 데이터의 무작위성을 최소화한다.
+            "border_count": trial.suggest_int("border_count", 32, 255),  # 분할 수 설정
+            "feature_border_type": trial.suggest_categorical("feature_border_type", ["Median", "Uniform", "UniformAndQuantiles", "MaxLogSum", "MinEntropy", "GreedyLogSum"]),  # 경계 유형 설정
+            "random_strength": trial.suggest_float("random_strength", 1e-3, 10, log=True),  # 랜덤화 강도 조절
+            "od_type": "Test", # 검증 데이터에 대하여 성능 개선이 이루어지지 않을 경우 조기 종료
+            "od_wait": 10, # 10번의 학습에서 성능 개선이 이루어지지 않을 경우 조기 종료
         }
 
         model = CatBoostClassifier(**params, logging_level="Info")
