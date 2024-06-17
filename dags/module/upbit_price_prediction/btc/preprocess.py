@@ -2,7 +2,7 @@ from dags.module.upbit_price_prediction.btc.create_table import (
     BtcOhlcv,
     BtcPreprocessed,
 )
-from sqlalchemy import Column, DateTime, Integer, Float, select, func, text, and_
+from sqlalchemy import select, func, text, and_, update
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
@@ -11,11 +11,14 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import declarative_base, sessionmaker
 from contextvars import ContextVar
+
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
+
 import numpy as np
 import logging
+import asyncpg
 import asyncio
 import uvloop
 import time
@@ -89,7 +92,7 @@ async def fill_missing_and_null_data(
     # 만약 존재하면 datetime으로 바꿔주고, 없을 시 None
     if past_new_time is not None:
         past_new_time_plus = (
-            datetime.fromisoformat(past_new_time) + timedelta(minutes=5)
+            datetime.fromisoformat(past_new_time) - relativedelta(days=30, minutes=5)
         ).isoformat()
     else:
         past_new_time = None
@@ -97,9 +100,10 @@ async def fill_missing_and_null_data(
     # current time : 정각의 시간을 필요로 하기 때문에 시간 밑으로는 버림
     # one_year_ago : generate_series로 current_time을 기준으로 과거 1년치의 데이터를 가져오기 위한 기간설정
     one_year_ago = (
-        datetime.fromisoformat(new_time) - relativedelta(days=365, minutes=-5)
+        datetime.fromisoformat(new_time) - relativedelta(days=(365 + 30), minutes=-5)
     ).isoformat()
 
+    logger.info(f"one_year_ago : {one_year_ago}")
     logger.info(f"type of new_time : {type(new_time)}")
     logger.info(f"new_time : {new_time}")
     logger.info(f"type of past_new_time : {type(past_new_time)}")
@@ -250,15 +254,140 @@ async def insert_null_data(session: AsyncSession) -> None:
     logger.info("Inserted null data into btc_ohlcv")
 
 
-async def load_all_data(session: AsyncSession, new_time: datetime):
-    # null 값이 없는 BtcOhlcv데이터만 가져오기
-    one_year_ago = datetime.fromisoformat(new_time) - relativedelta(
-        days=365, minutes=-5
+async def standard_scale_data(
+    session: AsyncSession, first_time: str, last_time: str, BATCH_SIZE: int = 500
+) -> None:
+    """
+    지정된 시간 범위 내의 데이터를 표준화(스케일링)하는 함수."""
+
+    logger.info(
+        f"Standard scaling data in btc_preprocessed between {first_time} and {last_time}"
     )
+
+    # 데이터 선택
+    stmt = (
+        select(BtcPreprocessed)
+        .where(BtcPreprocessed.time.between(first_time, last_time))
+        .order_by(BtcPreprocessed.time)
+    )
+
+    result = await session.execute(stmt)
+    data = result.scalars().all()
+
+    # 데이터 분할
+    split_point = int(len(data) * 0.9)
+    split_time = data[split_point - 1].time
+
+    # 훈련 데이터 선택
+    train_stmt = (
+        select(BtcPreprocessed)
+        .where(BtcPreprocessed.time.between(first_time, split_time))
+        .order_by(BtcPreprocessed.time)
+    )
+
+    train_result = await session.execute(train_stmt)
+    train_data = train_result.scalars().all()
+
+    # 테스트 데이터 선택
+    test_stmt = (
+        select(BtcPreprocessed)
+        .where(BtcPreprocessed.time.between(split_time, last_time))
+        .order_by(BtcPreprocessed.time)
+    )
+
+    test_result = await session.execute(test_stmt)
+    test_data = test_result.scalars().all()
+
+    # 훈련 데이터 배열 생성
+    train_array = np.array(
+        [
+            [
+                row.open,
+                row.high,
+                row.low,
+                row.close,
+                row.volume,
+                row.ma_7,
+                row.ma_14,
+                row.ma_30,
+                row.rsi_14,
+            ]
+            for row in train_data
+        ]
+    )
+
+    # 훈련 데이터의 평균 및 표준편차 계산
+    train_mean = np.mean(train_array, axis=0)
+    train_std = np.std(train_array, axis=0)
+
+    # 훈련 데이터 스케일링 및 업데이트
+    await scale_and_update_data(session, train_data, train_mean, train_std, BATCH_SIZE)
+
+    # 테스트 데이터 스케일링 및 업데이트
+    await scale_and_update_data(session, test_data, train_mean, train_std, BATCH_SIZE)
+
+    logger.info("Standard scaling and update completed.")
+
+
+async def scale_and_update_data(session: AsyncSession, data, mean, std, batch_size):
+    """
+    btc_preprocessed에 스케일링한 데이터를 업데이트하는 함수
+    """
+    for i in range(0, len(data), batch_size):
+        batch_data = data[i : i + batch_size]
+
+        batch_array = np.array(
+            [
+                [
+                    row.open,
+                    row.high,
+                    row.low,
+                    row.close,
+                    row.volume,
+                    row.ma_7,
+                    row.ma_14,
+                    row.ma_30,
+                    row.rsi_14,
+                ]
+                for row in batch_data
+            ]
+        )
+
+        batch_scaled = (batch_array - mean) / std
+
+        update_values = [
+            {
+                "time": row.time,
+                "open": batch_scaled[j][0],
+                "high": batch_scaled[j][1],
+                "low": batch_scaled[j][2],
+                "close": batch_scaled[j][3],
+                "volume": batch_scaled[j][4],
+                "ma_7": batch_scaled[j][5],
+                "ma_14": batch_scaled[j][6],
+                "ma_30": batch_scaled[j][7],
+                "rsi_14": batch_scaled[j][8],
+            }
+            for j, row in enumerate(batch_data)
+        ]
+
+        await session.execute(
+            """
+            UPDATE btc_preprocessed
+            SET open = :open, high = :high, low = :low, close = :close, volume = :volume, ma_7 = :ma_7, ma_14 = :ma_14, ma_30 = :ma_30, rsi_14 = :rsi_14
+            WHERE time = :time
+            """,
+            update_values,
+        )
+
+    await session.commit()  # Commit the session after all batches
+
+
+async def load_all_data(session: AsyncSession):
+    # null 값이 없는 BtcOhlcv데이터만 가져오기
     all_data_query = (
         select(BtcOhlcv)
-        .filter(BtcOhlcv.time >= one_year_ago)
-        .filter(
+        .where(
             and_(
                 BtcOhlcv.open.isnot(None),
                 BtcOhlcv.high.isnot(None),
@@ -279,25 +408,18 @@ async def load_all_data(session: AsyncSession, new_time: datetime):
     return all_data
 
 
-async def add_moving_average(conn: AsyncSession) -> None:
+async def add_moving_average(
+    conn: AsyncSession, first_time: str, last_time: str
+) -> None:
     """
     이동평균선(MA)를 만드는 함수( 7일, 14일, 30일 )
     """
-    logger.info("Add MA_7, MA_14, MA_30 in btc_preprocessed")
-    await conn.execute(
-        text(
-            """
-            ALTER TABLE btc_preprocessed
-            ADD COLUMN IF NOT EXISTS MA_7 INTEGER,
-            ADD COLUMN IF NOT EXISTS MA_14 INTEGER,
-            ADD COLUMN IF NOT EXISTS MA_30 INTEGER
-        """
-        )
+    logger.info(
+        f"Add MA_7, MA_14, MA_30 in btc_preprocessed  between {first_time} and {last_time}"
     )
-    await conn.commit()
     await conn.execute(
         text(
-            """
+            f"""
             WITH subquery AS (
                 SELECT
                     time,
@@ -305,14 +427,16 @@ async def add_moving_average(conn: AsyncSession) -> None:
                     AVG(close) OVER (ORDER BY time ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS avg_close_14,
                     AVG(close) OVER (ORDER BY time ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS avg_close_30
                 FROM btc_preprocessed
+                WHERE time BETWEEN '{first_time}' AND '{last_time}'
             )
             UPDATE btc_preprocessed
             SET
-                MA_7 = subquery.avg_close_7,
-                MA_14 = subquery.avg_close_14,
-                MA_30 = subquery.avg_close_30
+                ma_7 = subquery.avg_close_7,
+                ma_14 = subquery.avg_close_14,
+                ma_30 = subquery.avg_close_30
             FROM subquery
             WHERE btc_preprocessed.time = subquery.time
+            AND btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}';
         """
         )
     )
@@ -321,14 +445,26 @@ async def add_moving_average(conn: AsyncSession) -> None:
     logger.info("MA add success")
 
 
-async def add_ema(conn: AsyncSession) -> None:
+async def add_ema(conn: AsyncSession, first_time: str, last_time: str) -> None:
     """
     지수이동평균선(EMA)을 만드는 함수( 7일, 14일, 30일 )
     """
-    logger.info("Add EMA_7, EMA_14, EMA_30 in btc_preprocessed")
+    logger.info(
+        f"Add EMA_7, EMA_14, EMA_30 in btc_preprocessed between {first_time} and {last_time}"
+    )
     await conn.execute(
         text(
             """
+            ALTER TABLE btc_preprocessed
+            ALTER COLUMN ema_7 TYPE DOUBLE PRECISION,
+            ALTER COLUMN ema_14 TYPE DOUBLE PRECISION,
+            ALTER COLUMN ema_30 TYPE DOUBLE PRECISION
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            f"""
             WITH subquery AS (
                 SELECT
                     time,
@@ -336,14 +472,16 @@ async def add_ema(conn: AsyncSession) -> None:
                     EXP(SUM(LOG(close)) OVER (ORDER BY time ROWS BETWEEN 13 PRECEDING AND CURRENT ROW)) AS ema_close_14,
                     EXP(SUM(LOG(close)) OVER (ORDER BY time ROWS BETWEEN 29 PRECEDING AND CURRENT ROW)) AS ema_close_30
                 FROM btc_preprocessed
+                WHERE time BETWEEN '{first_time}' AND '{last_time}'
             )
             UPDATE btc_preprocessed
             SET
-                EMA_7 = subquery.ema_close_7,
-                EMA_14 = subquery.ema_close_14,
-                EMA_30 = subquery.ema_close_30
+                ema_7 = subquery.ema_close_7,
+                ema_14 = subquery.ema_close_14,
+                ema_30 = subquery.ema_close_30
             FROM subquery
             WHERE btc_preprocessed.time = subquery.time
+            AND btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}';
         """
         )
     )
@@ -351,14 +489,14 @@ async def add_ema(conn: AsyncSession) -> None:
     logger.info("EMA add success")
 
 
-async def add_rsi(conn: AsyncSession) -> None:
+async def add_rsi(conn: AsyncSession, first_time: str, last_time: str) -> None:
     """
     RSI(14일 기준의 상대강도지수) 를 만드는 함수.
     """
-    logger.info("Add RSI_14 in btc_preprocessed")
+    logger.info(f"Add RSI_14 in btc_preprocessed between {first_time} and {last_time}")
     await conn.execute(
         text(
-            """
+            f"""
             WITH gains_and_losses AS (
                 SELECT
                     time,
@@ -371,6 +509,7 @@ async def add_rsi(conn: AsyncSession) -> None:
                         ELSE 0
                     END AS loss
                 FROM btc_preprocessed
+                WHERE time BETWEEN '{first_time}' AND '{last_time}'
             ),
             avg_gains_losses AS (
                 SELECT
@@ -380,17 +519,22 @@ async def add_rsi(conn: AsyncSession) -> None:
                 FROM gains_and_losses
             )
             UPDATE btc_preprocessed
-            SET RSI_14 = 100 - (100 / (1 + avg_gain / avg_loss))
+            SET rsi_14 = CASE
+                            WHEN avg_loss = 0 THEN 100
+                            WHEN avg_gain = 0 THEN 0
+                            ELSE 100 - (100 / (1 + avg_gain / avg_loss))
+                        END
             FROM avg_gains_losses
             WHERE btc_preprocessed.time = avg_gains_losses.time
-        """
+            AND btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}';
+            """
         )
     )
     await conn.commit()
     logger.info("RSI add success")
 
 
-async def update_labels(conn: AsyncSession) -> None:
+async def update_labels(conn: AsyncSession, first_time: str, last_time: str) -> None:
     """
     close 값의 전, 후 비교를 통해 상승:1, 하락:0 으로 라벨링하는 함수
 
@@ -400,11 +544,12 @@ async def update_labels(conn: AsyncSession) -> None:
     logger.info("Updating labels 1 or 0 for all entries in btc_preprocessed")
     await conn.execute(
         text(
-            """
+            f"""
             WITH CTE AS (
                 SELECT time, close,
                     LAG(close) OVER (ORDER BY time) AS prev_close
                 FROM btc_preprocessed
+                WHERE time BETWEEN '{first_time}' AND '{last_time}'
             )
             UPDATE btc_preprocessed
             SET label = CASE
@@ -412,7 +557,8 @@ async def update_labels(conn: AsyncSession) -> None:
                             ELSE 0
                         END
             FROM CTE
-            WHERE btc_preprocessed.time = CTE.time;
+            WHERE btc_preprocessed.time = CTE.time
+            AND btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}';
             """
         )
     )
@@ -428,10 +574,6 @@ async def insert_data(
     new_time: str,
 ) -> None:
     """ """
-    one_year_ago = datetime.fromisoformat(new_time) - relativedelta(
-        days=365, minutes=-5
-    )
-
     if initial_insert:
         start_time_in = time.time()
         # 초기 데이터 처리
@@ -455,9 +597,7 @@ async def insert_data(
                     BtcOhlcv.low,
                     BtcOhlcv.close,
                     BtcOhlcv.volume,
-                )
-                .where(BtcOhlcv.time >= one_year_ago)
-                .order_by(BtcOhlcv.time),
+                ).order_by(BtcOhlcv.time),
             )
             .on_conflict_do_nothing()
         )  # fill_missing_and_null_data함수에서 처리된 데이터를 btc_prerpocessed에 미리 넣고, btc_ohlcv를 가져오는 형태이므로 충돌시 업데이트를 하지 않음.
@@ -483,7 +623,7 @@ async def insert_data(
         # 이전 태스크에 적재된 범위 내의 모든 데이터를 삽입
         new_data = await session.execute(
             select(BtcOhlcv)
-            .filter(
+            .where(
                 BtcOhlcv.time > text(f"'{past_new_time}'::timestamp"),
                 BtcOhlcv.time <= text(f"'{new_time}'::timestamp"),
             )
@@ -575,7 +715,7 @@ async def preprocess_data(context: dict) -> None:
                 # await insert_null_data(session)
 
                 # null 값이 없는 raw_data 가져오기
-                all_data = await load_all_data(session, new_time)
+                all_data = await load_all_data(session)
 
                 # 누락되었거나, null값인 데이터에 대한 처리작업을 한 후 그 데이터만 먼저 btc_preprocessed에 넣는다.
                 await fill_missing_and_null_data(
@@ -587,19 +727,44 @@ async def preprocess_data(context: dict) -> None:
                     minutes,
                     all_data,
                 )
-                # btc_ohlcv에서 1년치에 해당하는 데이터만 btc_preprocessed에 넣는다. 단, 이 때 충돌이 나는 데이터는 업데이트 하지 않는다.(미리 전처리했기 때문)
+                # btc_ohlcv에서 1년1개월치에 해당하는 데이터만 btc_preprocessed에 넣는다. 단, 이 때 충돌이 나는 데이터는 업데이트 하지 않는다.(미리 전처리했기 때문)
                 await insert_data(
                     session, conn, initial_insert, past_new_time, new_time
                 )
+                # 최초삽입시에는 month_past_time 1년1개월 전으로 설정. 그 이후에는 적재 전 db의 최신시간 에서 1달전으로 설정(30일 이동평균선의 계산을 위해)
+                # minutes + 5 를 하는 이유는 작업 직전 db의 최신시간 이후부터 작업해야하기 때문(이 부분부터 포함해서 current_time_dt 까지 조회하기위해)
+                if initial_insert:
+                    month_past_time = (
+                        datetime.fromisoformat(new_time)
+                        - relativedelta(days=(365 + 30), minutes=-5)
+                    ).isoformat()
+                else:
+                    month_past_time = (
+                        datetime.fromisoformat(past_new_time)
+                        - relativedelta(days=30, minutes=-5)
+                    ).isoformat()
 
                 # 이동평균선, 지수이동평균선, RSI, label feature 추가
-                await add_moving_average(conn)
-                await add_ema(conn)
-                await add_rsi(conn)
-                await update_labels(conn)
+                await add_moving_average(conn, month_past_time, current_time_dt)
+                # await add_ema(conn, past_time, current_time_dt)
+                await add_rsi(conn, month_past_time, current_time_dt)
+                await update_labels(conn, month_past_time, current_time_dt)
 
                 # 1년이 지난 데이터 삭제
                 await delete_old_data(session)
+
+                # 스케일링
+                # 최초삽입시 past_time을 다시 1년전으로 재조정. 이 시점에서는 btc_preprocessed는 현재기준 딱 1년치의 데이터를 보유중이기 때문
+                past_time = (
+                    datetime.fromisoformat(new_time)
+                    - relativedelta(days=365, minutes=-5)
+                ).isoformat()
+                if initial_insert:
+                    await standard_scale_data(
+                        session, engine, past_time, current_time_dt
+                    )
+                else:
+                    await standard_scale_data(session, past_new_time, current_time_dt)
 
                 # 삽입된 데이터를 시간순으로 정렬
                 await session.execute(

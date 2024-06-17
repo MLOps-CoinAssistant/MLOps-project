@@ -281,7 +281,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
 
         async with AsyncScopedSession() as session:
             most_recent_time = await get_most_recent_data_time(session)
-            current_time = datetime.now() + relativedelta(hours=9)
+            current_time = datetime.now() + timedelta(hours=9)
             minutes = 5  # 몇 분 봉 데이터를 가져올지 설정
 
             # db에 데이터가 들어온적이 있다면 그대로 진행
