@@ -210,10 +210,10 @@ async def insert_data_into_db(
         raise e
 
 
-# 현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
+# 현재 시간(UTC+9)으로부터 365 + 30일이 지난 데이터를 데이터베이스에서 삭제하는 함수 ( preprocess에서 30일 이동평균선 계산을 위해 1년 1개월치 유지)
 async def delete_old_data(session: AsyncSession) -> None:
     try:
-        threshold_date = datetime.now() - relativedelta(days=365)
+        threshold_date = datetime.now() - relativedelta(days=395)
         threshold_kst = threshold_date + timedelta(hours=9)
         now = datetime.now() + timedelta(hours=9)
         logger.info(f"now_kst : {now}")
@@ -250,7 +250,7 @@ async def get_most_recent_data_time(session: AsyncSession) -> Optional[datetime]
         raise
 
 
-# 데이터를 수집하고 데이터베이스에 적재하며, 365일이 지난 데이터를 삭제하는 함수
+# 데이터를 수집하고 데이터베이스에 적재하며, 365+30일이 지난 데이터를 삭제하는 함수
 async def collect_and_load_data(db_uri: str, context: dict) -> None:
     """
     - 세션 관련 변수에 대한 설명
@@ -296,7 +296,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
                 logger.info(
                     f"No recent data found, setting most_recent_time to one year ago from current_time"
                 )
-                most_recent_time = current_time - relativedelta(days=365)
+                most_recent_time = current_time - relativedelta(days=395)
                 initial_insert = True
 
             time_diff = current_time - most_recent_time
@@ -415,7 +415,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
             count_total = count_total_result.scalar()
             logger.info(f"Total collected records before delete: {count_total}")
 
-            # 데이터 삽입 후 365일이 지난 데이터를 삭제
+            # 데이터 삽입 후 365+30일이 지난 데이터를 삭제
             await delete_old_data(session)
 
             count_final_result = await session.execute(
