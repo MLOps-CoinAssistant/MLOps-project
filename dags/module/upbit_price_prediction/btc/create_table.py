@@ -25,16 +25,17 @@ class BtcOhlcv(Base):
 class BtcPreprocessed(Base):
     __tablename__ = "btc_preprocessed"
     time = Column(DateTime, primary_key=True)
-    open = Column(Float)
-    high = Column(Float)
-    low = Column(Float)
-    close = Column(Float)
+    open = Column(Integer)
+    high = Column(Integer)
+    low = Column(Integer)
+    close = Column(Integer)
     volume = Column(Float)
     label = Column(Integer)
-    ma_7 = Column(Float)
-    ma_14 = Column(Float)
-    ma_30 = Column(Float)
+    ma_7 = Column(Integer)
+    ma_14 = Column(Integer)
+    ma_30 = Column(Integer)
     rsi_14 = Column(Float)
+    rsi_over = Column(Float)
 
 
 def create_table_fn(

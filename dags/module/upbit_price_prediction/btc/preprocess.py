@@ -2,7 +2,7 @@ from dags.module.upbit_price_prediction.btc.create_table import (
     BtcOhlcv,
     BtcPreprocessed,
 )
-from sqlalchemy import select, func, text, and_, update
+from sqlalchemy import select, func, text, and_, update, bindparam
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
@@ -15,13 +15,13 @@ from contextvars import ContextVar
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-
+import psutil
 import numpy as np
 import logging
-import asyncpg
 import asyncio
 import uvloop
 import time
+import asyncpg
 
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -38,32 +38,27 @@ session_context = ContextVar("session_context", default=None)
 
 # 현재 시간(UTC+9)으로부터 365일이 지난 데이터를 데이터베이스에서 삭제하는 함수
 async def delete_old_data(session: AsyncSession) -> None:
-    try:
-        threshold_date = datetime.now() - relativedelta(days=365)
-        threshold_kst = threshold_date + timedelta(hours=9)
-        now = datetime.now() + timedelta(hours=9)
-        logger.info(f"now_kst : {now}")
-        logger.info(f"Threshold date for deletion: {threshold_kst}")
+    threshold_date = datetime.now() - relativedelta(days=365)
+    threshold_kst = threshold_date + timedelta(hours=9)
+    now = datetime.now() + timedelta(hours=9)
+    logger.info(f"now_kst : {now}")
+    logger.info(f"Threshold date for deletion: {threshold_kst}")
 
-        # 디버그를 위해 삭제할 데이터의 개수를 먼저 확인
-        count_query = select(func.count()).where(BtcPreprocessed.time < threshold_kst)
-        result = await session.execute(count_query)
-        delete_count = result.scalar()
-        logger.info(f"Number of records to be deleted: {delete_count}")
-        if delete_count == 0:
-            logger.info("There is No data to DELETE")
-            return
+    # 디버그를 위해 삭제할 데이터의 개수를 먼저 확인
+    count_query = select(func.count()).where(BtcPreprocessed.time < threshold_kst)
+    result = await session.execute(count_query)
+    delete_count = result.scalar()
+    logger.info(f"Number of records to be deleted: {delete_count}")
+    if delete_count == 0:
+        logger.info("There is No data to DELETE")
+        return
 
-        delete_query = BtcPreprocessed.__table__.delete().where(
-            BtcPreprocessed.time < threshold_kst
-        )
-        await session.execute(delete_query)
-        await session.commit()
-        logger.info(f"Deleted {delete_count} old records from the database.")
-    except Exception as e:
-        await session.rollback()
-        logger.error(f"Failed to delete old data: {e}")
-        raise
+    delete_query = BtcPreprocessed.__table__.delete().where(
+        BtcPreprocessed.time < threshold_kst
+    )
+    await session.execute(delete_query)
+    await session.commit()
+    logger.info(f"Deleted {delete_count} old records from the database.")
 
 
 async def fill_missing_and_null_data(
@@ -92,7 +87,7 @@ async def fill_missing_and_null_data(
     # 만약 존재하면 datetime으로 바꿔주고, 없을 시 None
     if past_new_time is not None:
         past_new_time_plus = (
-            datetime.fromisoformat(past_new_time) - relativedelta(days=30, minutes=5)
+            datetime.fromisoformat(past_new_time) - relativedelta(days=1, minutes=5)
         ).isoformat()
     else:
         past_new_time = None
@@ -100,7 +95,7 @@ async def fill_missing_and_null_data(
     # current time : 정각의 시간을 필요로 하기 때문에 시간 밑으로는 버림
     # one_year_ago : generate_series로 current_time을 기준으로 과거 1년치의 데이터를 가져오기 위한 기간설정
     one_year_ago = (
-        datetime.fromisoformat(new_time) - relativedelta(days=(365 + 30), minutes=-5)
+        datetime.fromisoformat(new_time) - relativedelta(days=(365 + 1), minutes=-5)
     ).isoformat()
 
     logger.info(f"one_year_ago : {one_year_ago}")
@@ -222,10 +217,10 @@ async def fill_missing_and_null_data(
 
         new_record = BtcPreprocessed(
             time=missing_time,
-            open=int(open_avg),
-            high=int(high_avg),
-            low=int(low_avg),
-            close=int(close_avg),
+            open=open_avg,
+            high=high_avg,
+            low=low_avg,
+            close=close_avg,
             volume=volume_avg,
         )
         session.add(new_record)
@@ -255,19 +250,28 @@ async def insert_null_data(session: AsyncSession) -> None:
 
 
 async def standard_scale_data(
-    session: AsyncSession, first_time: str, last_time: str, BATCH_SIZE: int = 500
+    session: AsyncSession, first_time_: str, last_time: str, BATCH_SIZE: int = 100
 ) -> None:
     """
     지정된 시간 범위 내의 데이터를 표준화(스케일링)하는 함수."""
 
     logger.info(
-        f"Standard scaling data in btc_preprocessed between {first_time} and {last_time}"
+        f"Standard scaling data in btc_preprocessed between {first_time_} and {last_time}"
     )
+    logger.info(f"type of first_time = {type(first_time_)}")
+    logger.info(f"type of last_time = {type(last_time)}")
 
+    first_time = datetime.fromisoformat(first_time_)
+    last_time = datetime.fromisoformat(last_time)
+    logger.info(f"type of first_time after = {type(first_time)}")
+    logger.info(f"first_time : {first_time}")
+    logger.info(f"type of last_time after = {type(last_time)}")
+    logger.info(f"last_time : {last_time}")
     # 데이터 선택
     stmt = (
         select(BtcPreprocessed)
-        .where(BtcPreprocessed.time.between(first_time, last_time))
+        .where(BtcPreprocessed.time >= first_time)
+        .where(BtcPreprocessed.time <= last_time)
         .order_by(BtcPreprocessed.time)
     )
 
@@ -281,7 +285,8 @@ async def standard_scale_data(
     # 훈련 데이터 선택
     train_stmt = (
         select(BtcPreprocessed)
-        .where(BtcPreprocessed.time.between(first_time, split_time))
+        .where(BtcPreprocessed.time >= first_time)
+        .where(BtcPreprocessed.time <= split_time)
         .order_by(BtcPreprocessed.time)
     )
 
@@ -291,7 +296,8 @@ async def standard_scale_data(
     # 테스트 데이터 선택
     test_stmt = (
         select(BtcPreprocessed)
-        .where(BtcPreprocessed.time.between(split_time, last_time))
+        .where(BtcPreprocessed.time > split_time)
+        .where(BtcPreprocessed.time <= last_time)
         .order_by(BtcPreprocessed.time)
     )
 
@@ -321,18 +327,56 @@ async def standard_scale_data(
     train_std = np.std(train_array, axis=0)
 
     # 훈련 데이터 스케일링 및 업데이트
+    logger.info("inserting scaled train data in btc_preprocessed...")
     await scale_and_update_data(session, train_data, train_mean, train_std, BATCH_SIZE)
-
+    logger.info("train data update completed")
     # 테스트 데이터 스케일링 및 업데이트
+    logger.info("inserting scaled test data in btc_preprocessed...")
     await scale_and_update_data(session, test_data, train_mean, train_std, BATCH_SIZE)
-
-    logger.info("Standard scaling and update completed.")
+    logger.info("test data update completed")
+    logger.info("ALL Standard scaling and update completed.")
 
 
 async def scale_and_update_data(session: AsyncSession, data, mean, std, batch_size):
     """
     btc_preprocessed에 스케일링한 데이터를 업데이트하는 함수
     """
+
+    async def update_batch(batch_data, batch_scaled):
+        update_values = [
+            {
+                "b_time": row.time,
+                "open": batch_scaled[j][0],
+                "high": batch_scaled[j][1],
+                "low": batch_scaled[j][2],
+                "close": batch_scaled[j][3],
+                "volume": batch_scaled[j][4],
+                "ma_7": batch_scaled[j][5],
+                "ma_14": batch_scaled[j][6],
+                "ma_30": batch_scaled[j][7],
+                "rsi_14": batch_scaled[j][8],
+            }
+            for j, row in enumerate(batch_data)
+        ]
+
+        await session.execute(
+            update(BtcPreprocessed)
+            .where(BtcPreprocessed.time == bindparam("b_time"))
+            .values(
+                open=bindparam("open"),
+                high=bindparam("high"),
+                low=bindparam("low"),
+                close=bindparam("close"),
+                volume=bindparam("volume"),
+                ma_7=bindparam("ma_7"),
+                ma_14=bindparam("ma_14"),
+                ma_30=bindparam("ma_30"),
+                rsi_14=bindparam("rsi_14"),
+            ),
+            update_values,
+        )
+
+    tasks = []
     for i in range(0, len(data), batch_size):
         batch_data = data[i : i + batch_size]
 
@@ -354,32 +398,9 @@ async def scale_and_update_data(session: AsyncSession, data, mean, std, batch_si
         )
 
         batch_scaled = (batch_array - mean) / std
+        tasks.append(update_batch(batch_data, batch_scaled))
 
-        update_values = [
-            {
-                "time": row.time,
-                "open": batch_scaled[j][0],
-                "high": batch_scaled[j][1],
-                "low": batch_scaled[j][2],
-                "close": batch_scaled[j][3],
-                "volume": batch_scaled[j][4],
-                "ma_7": batch_scaled[j][5],
-                "ma_14": batch_scaled[j][6],
-                "ma_30": batch_scaled[j][7],
-                "rsi_14": batch_scaled[j][8],
-            }
-            for j, row in enumerate(batch_data)
-        ]
-
-        await session.execute(
-            """
-            UPDATE btc_preprocessed
-            SET open = :open, high = :high, low = :low, close = :close, volume = :volume, ma_7 = :ma_7, ma_14 = :ma_14, ma_30 = :ma_30, rsi_14 = :rsi_14
-            WHERE time = :time
-            """,
-            update_values,
-        )
-
+    await asyncio.gather(*tasks)
     await session.commit()  # Commit the session after all batches
 
 
@@ -534,6 +555,228 @@ async def add_rsi(conn: AsyncSession, first_time: str, last_time: str) -> None:
     logger.info("RSI add success")
 
 
+async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> None:
+    """
+    RSI_14 값을 기반으로 rsi_over 피쳐를 추가하는 함수.
+
+    - 설명
+    rsi를 매매에 활용하는 방식 중 하나로 rsi의 수치를 통해 과매수, 과매도 상태를 판별하는 방법이 있습니다.
+    rsi가 높을 경우(보통 70~80이상) 과매수 구간으로 판단해서, 매도했을 때 수익이 날 가능성이 높다고 말합니다.(하락 가능성이 높은 상황)
+    반대로 rsi가 낮을 경우(보통 20~30이하) 과매도 구간으로 판단해서, 매수했을 때 수익이 날 가능성이 높다고 말합니다. (상승 가능성이 높은 상황)
+    이 내용은 기존에 널리 알려져 있는 부분이고, 여기에서 추가로 저의 나름대로의 매매 노하우를 담아서 새로운 피쳐를 만들었습니다.
+    rsi가 25, 75를 기준으로 넘어가있는 rsi에 대하여 가장 높거나, 낮게 설정되어있는 꼭지점을 찾아서 그 꼭지점을 기준으로 과거시간, 미래시간에 대해 각각 숫자를 부여합니다.
+    25~75 사이의 값에 대해서는 같은 숫자를 부여합니다.
+    이러한 계산방식으로 숫자를 매핑하는 이유는 각 영역에서 극값을 갖는 rsi는 대부분이 뾰족한 형태로 나타나며, 이는 강력한 매수,매도 신호가 되기 때문입니다.
+
+    - 과정
+    1) 25 <= rsi <= 75 인 경우 : rsi_over = 2
+    2) rsi > 75 의 조건에 들어갔을 때 부터 rsi < 75 가 되는순간 사이의 rsi값 중 최고값을 찾아서 그 최고값의 시간을 기준으로 과거시간 : 1 (상승을의미), 미래시간 : 0 (하락을의미)
+    3) rsi < 25 의 조건에 들어갔을 때 부터 rsi > 25 가 되는 순간 사이의 rsi값 중 최저값을 찾아서 그 최저값의 시간을 기준으로 과거시간 : 0 (하락), 미래시간 : 1, (상승)
+
+    """
+
+    logger.info(
+        f"Add RSI_OVER in btc_preprocessed between {first_time} and {last_time}"
+    )
+
+    # 25 <= rsi <= 75 인 구간
+    await conn.execute(
+        text(
+            f"""
+            UPDATE btc_preprocessed
+            SET rsi_over = 2
+            WHERE time BETWEEN '{first_time}' AND '{last_time}';
+            """
+        )
+    )
+    await conn.commit()
+
+    # # 3개 이상일때만 적용
+    # if datetime.fromisoformat(first_time) - datetime.fromisoformat(last_time) <= timedelta(minutes=10):
+    #     logger.info("There is not enough data")
+    #     return
+    # rsi > 75 인 구간
+    """
+    - 서브쿼리 설명
+
+    rsi_75_intervals : rsi가 75이상인 구간을 찾습니다. 75이상이면 start, 이하면 end로 interval_marker 설정
+
+    rsi_75_ranges : SUM을 사용하여 구간의 시작과 끝을 식별합니다.
+    75이상인 구간부터 start, end가 각각 등장할 때 마다 1씩 증가시켜 두 합을 비교해서 75이상인 구간을 찾습니다.
+    구간이 끝날 때 마다 reset_count를 증가시킵니다.
+
+    reset_ranges_75 : 이전 구간 종료 여부(이전 행의 reset_count보다 클때)를 확인해서 누적합계(range_start, range_end)를 초기화합니다. (75이상인 구간이 여러번 나올 것이므로)
+    이 때 reset = 1 로 설정하여 구간이 종료됐음을 나타냅니다.
+
+    max_rsi_75 : 각 구간 내에서 최고값과 그 시점을 찾습니다. reset_count를 group by 해서 구간을 분리합니다.
+
+    UPDATE : 구간 내 최고값을 기준으로 과거에는 1, 미래에는 0 을 부여합니다. reset_count를 통해 구간을 구분합니다.
+    """
+    await conn.execute(
+        text(
+            f"""
+            WITH rsi_75_intervals AS (
+                SELECT
+                    time,
+                    rsi_14,
+                    CASE
+                        WHEN rsi_14 >= 75 THEN 'start'
+                        WHEN rsi_14 < 75 THEN 'end'
+                    END AS interval_marker
+                FROM btc_preprocessed
+                WHERE time BETWEEN '{first_time}' AND '{last_time}'
+            ),
+            rsi_75_ranges AS (
+                SELECT
+                    time,
+                    rsi_14,
+                    interval_marker,
+                    CASE
+                        WHEN interval_marker = 'start' THEN
+                            SUM(CASE WHEN interval_marker = 'start' THEN 1 ELSE 0 END) OVER (ORDER BY time)
+                        ELSE 0
+                    END AS range_start,
+                    CASE
+                        WHEN interval_marker = 'end' THEN
+                            SUM(CASE WHEN interval_marker = 'end' THEN 1 ELSE 0 END) OVER (ORDER BY time)
+                        ELSE 0
+                    END AS range_end,
+                    COUNT(CASE WHEN interval_marker = 'end' THEN 1 ELSE NULL END) OVER (ORDER BY time) AS reset_count
+                FROM rsi_75_intervals
+            ),
+            reset_ranges_75 AS (
+                SELECT
+                    time,
+                    rsi_14,
+                    interval_marker,
+                    CASE
+                        WHEN LAG(reset_count, 1, 0) OVER (ORDER BY time) < reset_count THEN 0
+                        ELSE range_start
+                    END AS range_start,
+                    CASE
+                        WHEN LAG(reset_count, 1, 0) OVER (ORDER BY time) < reset_count THEN 0
+                        ELSE range_end
+                    END AS range_end,
+                    reset_count
+                FROM rsi_75_ranges
+            ),
+            max_rsi_75 AS (
+                SELECT
+                    reset_count,
+                    MAX(rsi_14) AS max_rsi
+                FROM reset_ranges_75
+                WHERE range_start > range_end
+                GROUP BY reset_count
+            ),
+            max_time_75 AS (
+                SELECT
+                    reset_count,
+                    MIN(time) AS max_time
+                FROM reset_ranges_75
+                WHERE rsi_14 = (SELECT max_rsi FROM max_rsi_75 WHERE max_rsi_75.reset_count = reset_ranges_75.reset_count)
+                GROUP BY reset_count
+            )
+            UPDATE btc_preprocessed
+            SET rsi_over = CASE
+                            WHEN btc_preprocessed.time <= max_time_75.max_time THEN 1
+                            WHEN btc_preprocessed.time > max_time_75.max_time THEN 0
+                            ELSE btc_preprocessed.rsi_over
+                          END
+            FROM max_rsi_75, reset_ranges_75, max_time_75
+            WHERE btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}'
+            AND btc_preprocessed.rsi_14 >= 75
+            AND reset_ranges_75.reset_count = max_rsi_75.reset_count
+            AND btc_preprocessed.time = reset_ranges_75.time
+            AND max_time_75.reset_count = reset_ranges_75.reset_count;
+            """
+        )
+    )
+    await conn.commit()
+
+    # rsi < 25인 구간
+    await conn.execute(
+        text(
+            f"""
+            WITH rsi_25_intervals AS (
+                SELECT
+                    time,
+                    rsi_14,
+                    CASE
+                        WHEN rsi_14 <= 25 THEN 'start'
+                        WHEN rsi_14 > 25 THEN 'end'
+                    END AS interval_marker
+                FROM btc_preprocessed
+                WHERE time BETWEEN '{first_time}' AND '{last_time}'
+            ),
+            rsi_25_ranges AS (
+                SELECT
+                    time,
+                    rsi_14,
+                    interval_marker,
+                    CASE
+                        WHEN interval_marker = 'start' THEN
+                            SUM(CASE WHEN interval_marker = 'start' THEN 1 ELSE 0 END) OVER (ORDER BY time)
+                        ELSE 0
+                    END AS range_start,
+                    CASE
+                        WHEN interval_marker = 'end' THEN
+                            SUM(CASE WHEN interval_marker = 'end' THEN 1 ELSE 0 END) OVER (ORDER BY time)
+                        ELSE 0
+                    END AS range_end,
+                    COUNT(CASE WHEN interval_marker = 'end' THEN 1 ELSE NULL END) OVER (ORDER BY time) AS reset_count
+                FROM rsi_25_intervals
+            ),
+            reset_ranges_25 AS (
+                SELECT
+                    time,
+                    rsi_14,
+                    interval_marker,
+                    CASE
+                        WHEN LAG(reset_count, 1, 0) OVER (ORDER BY time) < reset_count THEN 0
+                        ELSE range_start
+                    END AS range_start,
+                    CASE
+                        WHEN LAG(reset_count, 1, 0) OVER (ORDER BY time) < reset_count THEN 0
+                        ELSE range_end
+                    END AS range_end,
+                    reset_count
+                FROM rsi_25_ranges
+            ),
+            min_rsi_25 AS (
+                SELECT
+                    reset_count,
+                    MIN(rsi_14) AS min_rsi
+                FROM reset_ranges_25
+                WHERE range_start > range_end
+                GROUP BY reset_count
+            ),
+            min_time_25 AS (
+                SELECT
+                    reset_count,
+                    MIN(time) AS min_time
+                FROM reset_ranges_25
+                WHERE rsi_14 = (SELECT min_rsi FROM min_rsi_25 WHERE min_rsi_25.reset_count = reset_ranges_25.reset_count)
+                GROUP BY reset_count
+            )
+            UPDATE btc_preprocessed
+            SET rsi_over = CASE
+                            WHEN btc_preprocessed.time <= min_time_25.min_time THEN 0
+                            WHEN btc_preprocessed.time > min_time_25.min_time THEN 1
+                            ELSE btc_preprocessed.rsi_over
+                          END
+            FROM min_rsi_25, reset_ranges_25, min_time_25
+            WHERE btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}'
+            AND btc_preprocessed.rsi_14 <= 25
+            AND reset_ranges_25.reset_count = min_rsi_25.reset_count
+            AND btc_preprocessed.time = reset_ranges_25.time
+            AND min_time_25.reset_count = reset_ranges_25.reset_count;
+            """
+        )
+    )
+    await conn.commit()
+    logger.info("RSI_OVER add success")
+
+
 async def update_labels(conn: AsyncSession, first_time: str, last_time: str) -> None:
     """
     close 값의 전, 후 비교를 통해 상승:1, 하락:0 으로 라벨링하는 함수
@@ -599,7 +842,7 @@ async def insert_data(
                     BtcOhlcv.volume,
                 ).order_by(BtcOhlcv.time),
             )
-            .on_conflict_do_nothing()
+            .on_conflict_do_nothing(index_elements=["time"])
         )  # fill_missing_and_null_data함수에서 처리된 데이터를 btc_prerpocessed에 미리 넣고, btc_ohlcv를 가져오는 형태이므로 충돌시 업데이트를 하지 않음.
         await conn.execute(stmt)
         await conn.commit()
@@ -748,23 +991,27 @@ async def preprocess_data(context: dict) -> None:
                 await add_moving_average(conn, month_past_time, current_time_dt)
                 # await add_ema(conn, past_time, current_time_dt)
                 await add_rsi(conn, month_past_time, current_time_dt)
+                if initial_insert:
+                    await add_rsi_over(conn, month_past_time, current_time_dt)
+                else:
+                    await add_rsi_over(conn, past_new_time, current_time_dt)
                 await update_labels(conn, month_past_time, current_time_dt)
 
                 # 1년이 지난 데이터 삭제
                 await delete_old_data(session)
 
-                # 스케일링
+                # 스케일링 작업(필요시 사용)
                 # 최초삽입시 past_time을 다시 1년전으로 재조정. 이 시점에서는 btc_preprocessed는 현재기준 딱 1년치의 데이터를 보유중이기 때문
-                past_time = (
-                    datetime.fromisoformat(new_time)
-                    - relativedelta(days=365, minutes=-5)
-                ).isoformat()
-                if initial_insert:
-                    await standard_scale_data(
-                        session, engine, past_time, current_time_dt
-                    )
-                else:
-                    await standard_scale_data(session, past_new_time, current_time_dt)
+                # past_time = (
+                #     datetime.fromisoformat(new_time)
+                #     - relativedelta(days=365, minutes=-5)
+                # ).isoformat()
+                # if initial_insert:
+                #     await standard_scale_data(
+                #         session, past_time, current_time_dt
+                #     )
+                # else:
+                #     await standard_scale_data(session, past_new_time, current_time_dt)
 
                 # 삽입된 데이터를 시간순으로 정렬
                 await session.execute(
@@ -811,8 +1058,20 @@ def preprocess_data_fn(**context) -> None:
         "current_time": current_time,
         "minutes": minutes,
     }
+    # preprocess task의 속도, 메모리, cpu, 테스트를 위한코드
+    process = psutil.Process()
+    initial_memory = process.memory_info().rss
+    initial_cpu = process.cpu_percent(interval=None)
 
     asyncio.run(preprocess_data(async_context))
+
+    final_memory = process.memory_info().rss
+    final_cpu = process.cpu_percent(interval=None)
+    memory_usage = final_memory - initial_memory
+    cpu_usage = final_cpu - initial_cpu
+    logger.info(
+        f"Memory usage: {memory_usage / (1024 * 1024):.2f} MB, CPU usage: {cpu_usage:.2f}%"
+    )
     e = time.time()
     es = e - s
     logger.info(f"Total working time : {es:.4f} sec")
