@@ -23,13 +23,13 @@ from dags.module.upbit_price_prediction.btc.classification import (
 
 @dag(
     schedule_interval="*/5 * * * *",  # 시작시간을 5의배수분으로 정하고 시작 (utc기준)
-    start_date=datetime(2024, 6, 15, 21, 50),
+    start_date=datetime(2024, 6, 17, 14, 40),
     catchup=False,
     default_args={
         "owner": "ChaCoSpoons",
         "retries": 3,
         "retry_delay": timedelta(minutes=3),
-        "execution_timeout": timedelta(minutes=5),
+        "execution_timeout": timedelta(minutes=10),
     },
     tags=["upbit pipeline"],
 )
