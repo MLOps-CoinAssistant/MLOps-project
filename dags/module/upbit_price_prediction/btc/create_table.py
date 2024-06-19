@@ -29,7 +29,7 @@ class BtcOhlcv(Base):
     high = Column(Integer)
     low = Column(Integer)
     close = Column(Integer)
-    volume = Column(Numeric(precision=6, scale=3))
+    volume = Column(Float)
 
 
 class BtcPreprocessed(Base):
