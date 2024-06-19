@@ -39,13 +39,13 @@ class BtcPreprocessed(Base):
     high = Column(Integer)
     low = Column(Integer)
     close = Column(Integer)
-    volume = Column(Numeric(precision=6, scale=3))
+    volume = Column(Float)
     label = Column(Integer)
     ma_7 = Column(Integer)
     ma_14 = Column(Integer)
     ma_30 = Column(Integer)
-    rsi_14 = Column(Numeric(precision=6, scale=3))
-    rsi_over = Column(Numeric(precision=6, scale=3))
+    rsi_14 = Column(Float)
+    rsi_over = Column(Float)
 
 
 class BtcRsiState_75(Base):
@@ -55,7 +55,7 @@ class BtcRsiState_75(Base):
     )
     range_start = Column(TIMESTAMP)
     range_end = Column(TIMESTAMP)
-    max_rsi = Column(Numeric(precision=6, scale=3))
+    max_rsi = Column(Float)
     max_rsi_time = Column(TIMESTAMP)
 
 
@@ -66,7 +66,7 @@ class BtcRsiState_25(Base):
     )
     range_start = Column(TIMESTAMP)
     range_end = Column(TIMESTAMP)
-    min_rsi = Column(Numeric(precision=6, scale=3))
+    min_rsi = Column(Float)
     min_rsi_time = Column(TIMESTAMP)
 
 
