@@ -942,6 +942,15 @@ async def update_rsi_state_and_data(
         logger.info(
             f"Updated btc_preprocessed rsi_over based on max_rsi_time_75: {max_rsi_time_75}"
         )
+    else:
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 2
+        WHERE time BETWEEN '{first_time}' AND '{last_time}'
+        AND rsi_14 >= 75
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
 
     # 최저값 기준으로 rsi_over 업데이트 (rsi <= 25)
     if min_rsi_time_25:
@@ -961,6 +970,15 @@ async def update_rsi_state_and_data(
         logger.info(
             f"Updated btc_preprocessed rsi_over based on min_rsi_time_25: {min_rsi_time_25}"
         )
+    else:
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 2
+        WHERE time BETWEEN '{first_time}' AND '{last_time}'
+        AND rsi_14 <= 25
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
 
         # rsi가 25와 75 사이인 경우 rsi_over를 2로 설정
         update_query = f"""
@@ -973,6 +991,50 @@ async def update_rsi_state_and_data(
         await conn.commit()
 
         logger.info(f"Set rsi_over to 2 for RSI between 25 and 75")
+    # 추가: 현재 상태에 맞게 rsi_over 값을 다시 설정
+    if min_rsi_time_25:
+        # 과거를 0으로 설정
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 0
+        WHERE time < '{min_rsi_time_25}'
+        AND rsi_14 <= 25
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
+
+        # 미래를 1로 설정
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 1
+        WHERE time > '{min_rsi_time_25}'
+        AND rsi_14 <= 25
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
+
+    if max_rsi_time_75:
+        # 과거를 1로 설정
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 1
+        WHERE time < '{max_rsi_time_75}'
+        AND rsi_14 >= 75
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
+
+        # 미래를 0으로 설정
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 0
+        WHERE time > '{max_rsi_time_75}'
+        AND rsi_14 >= 75
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
+
+    logger.info(f"Revised rsi_over values based on the latest min and max RSI times")
 
 
 async def update_labels(conn: AsyncSession, first_time: str, last_time: str) -> None:
