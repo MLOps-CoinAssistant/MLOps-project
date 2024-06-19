@@ -1,6 +1,15 @@
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from info.connections import Connections
-from sqlalchemy import create_engine, Column, DateTime, Integer, inspect, Float
+from sqlalchemy import (
+    create_engine,
+    Column,
+    DateTime,
+    Integer,
+    inspect,
+    Float,
+    Sequence,
+    TIMESTAMP,
+)
 from sqlalchemy.orm import declarative_base
 from airflow.exceptions import AirflowSkipException
 import logging
@@ -38,6 +47,28 @@ class BtcPreprocessed(Base):
     rsi_over = Column(Float)
 
 
+class BtcRsiState_75(Base):
+    __tablename__ = "rsi_75_state"
+    id = Column(
+        Integer, Sequence("rsi_75_state_id_seq"), primary_key=True, autoincrement=True
+    )
+    range_start = Column(TIMESTAMP)
+    range_end = Column(TIMESTAMP)
+    max_rsi = Column(Float)
+    max_rsi_time = Column(TIMESTAMP)
+
+
+class BtcRsiState_25(Base):
+    __tablename__ = "rsi_25_state"
+    id = Column(
+        Integer, Sequence("rsi_25_state_id_seq"), primary_key=True, autoincrement=True
+    )
+    range_start = Column(TIMESTAMP)
+    range_end = Column(TIMESTAMP)
+    min_rsi = Column(Float)
+    min_rsi_time = Column(TIMESTAMP)
+
+
 def create_table_fn(
     hook: PostgresHook = PostgresHook(
         postgres_conn_id=Connections.POSTGRES_DEFAULT.value
@@ -52,15 +83,18 @@ def create_table_fn(
     inspector = inspect(engine)
     ti = context["ti"]
     ti.xcom_push(key="db_uri", value=hook.get_uri())
-    if inspector.has_table("btc_ohlcv") and inspector.has_table("btc_preprocessed"):
-        logger.info("Table 'btc_ohlcv' and 'btc_preprocessed' already exists.")
+    if (
+        inspector.has_table("btc_ohlcv")
+        and inspector.has_table("btc_preprocessed")
+        and inspector.has_table("rsi_75_state")
+        and inspector.has_table("rsi_25_state")
+    ):
+        logger.info("ALL table already exists.")
         ti.xcom_push(key="table_created", value=False)
         e = time.time()
         es = e - s
         logger.info(f"Total working time : {es:.4f} sec")
-        raise AirflowSkipException(
-            "Table 'btc_ohlcv' and 'btc_preprocessed' already exists."
-        )
+        raise AirflowSkipException("ALL table already exists.")
     else:
         Base.metadata.create_all(engine)
         logger.info("Checked and created tables if not existing.")

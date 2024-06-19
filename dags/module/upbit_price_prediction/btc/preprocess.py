@@ -1,6 +1,8 @@
 from dags.module.upbit_price_prediction.btc.create_table import (
     BtcOhlcv,
     BtcPreprocessed,
+    BtcRsiState_75,
+    BtcRsiState_25,
 )
 from sqlalchemy import select, func, text, and_, update, bindparam
 from sqlalchemy.ext.asyncio import (
@@ -16,12 +18,12 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 import psutil
+import pandas as pd
 import numpy as np
 import logging
 import asyncio
 import uvloop
 import time
-import asyncpg
 
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -125,7 +127,6 @@ async def fill_missing_and_null_data(
     # 최초 삽입이 아닐 시에는 삽입 전 가장 최신데이터의 시간(past_new_time) 이후부터 ~ 이전 태스크에서 적재된 후
     # 최신데이터의 시간(new_time)까지 generate_series 범위로 선택하여 이 기간동안의 데이터 중 null값이 있거나 누락된 경우를 불러온다 (save_raw_data task에서 적재된 데이터 기간에 해당)
     else:
-        logger.info("-----------------")
         query = text(
             f"""
             SELECT gs AS time, b.open, b.high, b.low, b.close, b.volume
@@ -139,8 +140,6 @@ async def fill_missing_and_null_data(
             AND gs > '{past_new_time}'::timestamp
             """
         )
-        logger.info("-----------------")
-        logger.info(query)
 
     result = await conn.execute(query)
     missing_or_null_data = result.fetchall()
@@ -198,23 +197,6 @@ async def fill_missing_and_null_data(
         low_avg += np.random.normal(0, low_std * noise_factor)
         close_avg += np.random.normal(0, close_std * noise_factor)
         volume_avg += np.random.normal(0, volume_std * noise_factor)
-
-        logger.info(
-            f"moving average interpolated open value for {missing_time}: {open_avg}"
-        )
-        logger.info(
-            f"moving average interpolated high value for {missing_time}: {high_avg}"
-        )
-        logger.info(
-            f"moving average interpolated low value for {missing_time}: {low_avg}"
-        )
-        logger.info(
-            f"moving average interpolated close value for {missing_time}: {close_avg}"
-        )
-        logger.info(
-            f"moving average interpolated volume value for {missing_time}: {volume_avg}"
-        )
-
         new_record = BtcPreprocessed(
             time=missing_time,
             open=open_avg,
@@ -229,6 +211,7 @@ async def fill_missing_and_null_data(
     interpol_time = end_time - start_time
     logger.info(f"interpolate time : {interpol_time:.4f} sec")
     await session.commit()
+    logger.info(f"moving average interpolate completed")
 
 
 # fill_missing_and_null_data 테스트를 위한 함수
@@ -557,7 +540,7 @@ async def add_rsi(conn: AsyncSession, first_time: str, last_time: str) -> None:
 
 async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> None:
     """
-    RSI_14 값을 기반으로 rsi_over 피쳐를 추가하는 함수.
+    RSI_14 값을 기반으로 rsi_over 피쳐를 추가하는 함수. (최초삽입시에만 호출)
 
     - 설명
     rsi를 매매에 활용하는 방식 중 하나로 rsi의 수치를 통해 과매수, 과매도 상태를 판별하는 방법이 있습니다.
@@ -693,6 +676,31 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
     )
     await conn.commit()
 
+    await conn.execute(
+        text(
+            "ALTER TABLE rsi_75_state ALTER COLUMN id SET DEFAULT nextval('rsi_75_state_id_seq')"
+        )
+    )
+
+    # rsi_75_state 테이블에 상태 저장
+    await conn.execute(
+        text(
+            f"""
+            INSERT INTO rsi_75_state (range_start, range_end, max_rsi, max_rsi_time)
+            SELECT
+                COALESCE(MIN(time), '1970-01-01') AS range_start,
+                COALESCE(MAX(time), '1970-01-01') AS range_end,
+                COALESCE(MAX(rsi_14), 0) AS max_rsi,
+                COALESCE(MIN(time), '1970-01-01') AS max_rsi_time
+            FROM btc_preprocessed
+            WHERE rsi_14 >= 75
+            GROUP BY time
+            """
+        )
+    )
+
+    await conn.commit()
+
     # rsi < 25인 구간
     await conn.execute(
         text(
@@ -773,8 +781,198 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
             """
         )
     )
+
+    await conn.commit()
+
+    await conn.execute(
+        text(
+            "ALTER TABLE rsi_25_state ALTER COLUMN id SET DEFAULT nextval('rsi_25_state_id_seq')"
+        )
+    )
+    # rsi_25_state 테이블에 상태 저장
+    await conn.execute(
+        text(
+            f"""
+            INSERT INTO rsi_25_state (range_start, range_end, min_rsi, min_rsi_time)
+            SELECT
+                COALESCE(MIN(time), '1970-01-01') AS range_start,
+                COALESCE(MAX(time), '1970-01-01') AS range_end,
+                COALESCE(MAX(rsi_14), 0) AS min_rsi,
+                COALESCE(MIN(time), '1970-01-01') AS min_rsi_time
+            FROM btc_preprocessed
+            WHERE rsi_14 <= 25
+            GROUP BY time
+            """
+        )
+    )
+
     await conn.commit()
     logger.info("RSI_OVER add success")
+
+
+async def update_rsi_state_and_data(
+    conn: AsyncSession, first_time: str, last_time: str
+) -> None:
+    """
+    rsi_over 피쳐의 계산을 위해 미리 rsi_state 테이블에 저장하고,
+    저장되어있는 정보를 이용해서 필요 시 rsi_over를 업데이트하고 정보를 저장합니다
+
+    range_start : rsi_over 계산 시 특정구간(75 혹은 25) 에 들어갈 때의 시간 (timestamp)
+    range_end :  rsi_over 계산 시 특정구간에서 나올 때의 시간 (timestamp)
+    max_rsi : 마지막에 저장된 75이상 구간의 rsi의 최대값
+    min_rsi : 마지막에 저장된 25이하 구간의 rsi의 최소값
+    """
+
+    logger.info(f"Updating RSI state and data between {first_time} and {last_time}")
+
+    # DB에서 새로운 데이터 구간 가져오기
+    query = f"""
+    SELECT time, rsi_14
+    FROM btc_preprocessed
+    WHERE time BETWEEN '{first_time}' AND '{last_time}'
+    """
+    result = await conn.execute(text(query))
+
+    # 새로 들어온 데이터를 데이터프레임으로 변환
+    new_data_df = pd.DataFrame(result.fetchall(), columns=["time", "rsi_14"])
+
+    # DB에서 상태 저장 테이블의 최신 상태 가져오기
+    rsi_75_state_query = "SELECT * FROM rsi_75_state ORDER BY id DESC LIMIT 1"
+    rsi_25_state_query = "SELECT * FROM rsi_25_state ORDER BY id DESC LIMIT 1"
+
+    result_75 = await conn.execute(text(rsi_75_state_query))
+    result_25 = await conn.execute(text(rsi_25_state_query))
+
+    state_75 = result_75.fetchone()
+    state_25 = result_25.fetchone()
+
+    if state_75:
+        range_start_75 = state_75["range_start"]
+        range_end_75 = state_75["range_end"]
+        max_rsi_75 = state_75["max_rsi"]
+        max_rsi_time_75 = state_75["max_rsi_time"]
+    else:
+        range_start_75 = range_end_75 = max_rsi_75 = max_rsi_time_75 = None
+
+    if state_25:
+        range_start_25 = state_25["range_start"]
+        range_end_25 = state_25["range_end"]
+        min_rsi_25 = state_25["min_rsi"]
+        min_rsi_time_25 = state_25["min_rsi_time"]
+    else:
+        range_start_25 = range_end_25 = min_rsi_25 = min_rsi_time_25 = None
+
+    logger.info(
+        f"Initial state for RSI > 75: range_start={range_start_75}, range_end={range_end_75}, max_rsi={max_rsi_75}, max_rsi_time={max_rsi_time_75}"
+    )
+    logger.info(
+        f"Initial state for RSI < 25: range_start={range_start_25}, range_end={range_end_25}, min_rsi={min_rsi_25}, min_rsi_time={min_rsi_time_25}"
+    )
+
+    # 새로운 데이터를 기존 상태와 비교 및 업데이트
+    for index, row in new_data_df.iterrows():
+        time = row["time"]
+        rsi_14 = row["rsi_14"]
+
+        # 처리 rsi >= 75
+        if rsi_14 >= 75:
+            if range_start_75 is None:
+                range_start_75 = time
+            if max_rsi_75 is None or rsi_14 > max_rsi_75:
+                max_rsi_75 = rsi_14
+                max_rsi_time_75 = time
+        elif rsi_14 < 75 and range_start_75 is not None:
+            range_end_75 = time
+
+            # 상태 저장 테이블에 상태 갱신
+            insert_query = f"""
+            INSERT INTO rsi_75_state (range_start, range_end, max_rsi, max_rsi_time)
+            VALUES ('{range_start_75}', '{range_end_75}', {max_rsi_75}, '{max_rsi_time_75}')
+            """
+            await conn.execute(text(insert_query))
+            await conn.commit()
+
+            logger.info(
+                f"Updated RSI > 75 state: range_start={range_start_75}, range_end={range_end_75}, max_rsi={max_rsi_75}, max_rsi_time={max_rsi_time_75}"
+            )
+
+            # 상태 초기화
+            range_start_75 = range_end_75 = max_rsi_75 = max_rsi_time_75 = None
+
+        # 처리 rsi <= 25
+        if rsi_14 <= 25:
+            if range_start_25 is None:
+                range_start_25 = time
+            if min_rsi_25 is None or rsi_14 < min_rsi_25:
+                min_rsi_25 = rsi_14
+                min_rsi_time_25 = time
+        elif rsi_14 > 25 and range_start_25 is not None:
+            range_end_25 = time
+
+            # 상태 저장 테이블에 상태 갱신
+            insert_query = f"""
+            INSERT INTO rsi_25_state (range_start, range_end, min_rsi, min_rsi_time)
+            VALUES ('{range_start_25}', '{range_end_25}', {min_rsi_25}, '{min_rsi_time_25}')
+            """
+            await conn.execute(text(insert_query))
+            await conn.commit()
+
+            logger.info(
+                f"Updated RSI < 25 state: range_start={range_start_25}, range_end={range_end_25}, min_rsi={min_rsi_25}, min_rsi_time={min_rsi_time_25}"
+            )
+
+            # 상태 초기화
+            range_start_25 = range_end_25 = min_rsi_25 = min_rsi_time_25 = None
+
+    # 최대값 기준으로 rsi_over 업데이트 (rsi >= 75)
+    if max_rsi_time_75:
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = CASE
+                        WHEN time <= '{max_rsi_time_75}' THEN 1
+                        WHEN time > '{max_rsi_time_75}' THEN 0
+                        ELSE 2
+                      END
+        WHERE time BETWEEN '{first_time}' AND '{last_time}'
+        AND rsi_14 >= 75
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
+
+        logger.info(
+            f"Updated btc_preprocessed rsi_over based on max_rsi_time_75: {max_rsi_time_75}"
+        )
+
+    # 최저값 기준으로 rsi_over 업데이트 (rsi <= 25)
+    if min_rsi_time_25:
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = CASE
+                        WHEN time <= '{min_rsi_time_25}' THEN 0
+                        WHEN time > '{min_rsi_time_25}' THEN 1
+                        ELSE 2
+                      END
+        WHERE time BETWEEN '{first_time}' AND '{last_time}'
+        AND rsi_14 <= 25
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
+
+        logger.info(
+            f"Updated btc_preprocessed rsi_over based on min_rsi_time_25: {min_rsi_time_25}"
+        )
+
+        # rsi가 25와 75 사이인 경우 rsi_over를 2로 설정
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 2
+        WHERE time BETWEEN '{first_time}' AND '{last_time}'
+        AND rsi_14 > 25 AND rsi_14 < 75
+        """
+        await conn.execute(text(update_query))
+        await conn.commit()
+
+        logger.info(f"Set rsi_over to 2 for RSI between 25 and 75")
 
 
 async def update_labels(conn: AsyncSession, first_time: str, last_time: str) -> None:
@@ -913,7 +1111,10 @@ async def preprocess_data(context: dict) -> None:
     """
     db_uri = context["db_uri"]
     engine = create_async_engine(
-        db_uri.replace("postgresql", "postgresql+asyncpg"), future=True
+        db_uri.replace("postgresql", "postgresql+asyncpg"),
+        pool_size=10,
+        max_overflow=20,
+        future=True,
     )
     session_factory = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     # 비동기 함수들간에 세션을 안전하게 공유, 세션 자동생성/해제 하기 위해 사용. 세션 관리하기 좋고 코드의일관성 유지가능.
@@ -994,7 +1195,9 @@ async def preprocess_data(context: dict) -> None:
                 if initial_insert:
                     await add_rsi_over(conn, month_past_time, current_time_dt)
                 else:
-                    await add_rsi_over(conn, past_new_time, current_time_dt)
+                    await update_rsi_state_and_data(
+                        conn, past_new_time, current_time_dt
+                    )
                 await update_labels(conn, month_past_time, current_time_dt)
 
                 # 1년이 지난 데이터 삭제

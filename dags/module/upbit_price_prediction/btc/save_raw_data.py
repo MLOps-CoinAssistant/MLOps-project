@@ -268,7 +268,10 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
     """
     async with aiohttp.ClientSession() as aiohttp_session:
         engine = create_async_engine(
-            db_uri.replace("postgresql", "postgresql+asyncpg"), future=True
+            db_uri.replace("postgresql", "postgresql+asyncpg"),
+            pool_size=10,
+            max_overflow=20,
+            future=True,
         )
         session_factory = sessionmaker(
             engine, expire_on_commit=False, class_=AsyncSession
