@@ -173,3 +173,10 @@ seaborn==0.13.2
 catboost==1.2.5
 asyncpg==0.29.0
 psutil==5.9.8
+google==3.0.0
+torch
+transformers
+datasets
+torchvision
+torchaudio
+sentence-transformers

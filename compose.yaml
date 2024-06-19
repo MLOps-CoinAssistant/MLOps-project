@@ -31,30 +31,10 @@ networks:
     driver: bridge
 
 volumes:
-  # postgres_data:
-  #   driver: local
   airflow_logs:
     driver: local
 
 services:
-  # postgres:
-  #   image: docker.io/postgres:12.6
-  #   restart: unless-stopped
-  #   networks:
-  #     - airflow
-  #   labels:
-  #     io.astronomer.docker: "true"
-  #     io.astronomer.docker.cli: "true"
-  #   ports:
-  #     - 127.0.0.1:5432:5432
-  #   volumes:
-
-  #     - postgres_data:/var/lib/postgresql/data
-
-  #   environment:
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: postgres
-
   scheduler:
     image: ml-ops-project_c92c7b/airflow:latest
     command: >
@@ -67,14 +47,14 @@ services:
       io.astronomer.docker: "true"
       io.astronomer.docker.cli: "true"
       io.astronomer.docker.component: "airflow-scheduler"
-    # depends_on:
-    #   - postgres
     environment: *common-env-vars
     volumes:
       - /home/ubuntu/MLOps-project/dags:/usr/local/airflow/dags:z
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z
       - /home/ubuntu/MLOps-project/include:/usr/local/airflow/include:z
       - /home/ubuntu/MLOps-project/tests:/usr/local/airflow/tests:z
+      # [WARNING] Please don't remove below line. It's used to mount the pre-trained models to the container.
+      - /home/ubuntu/pre-trained/:/usr/local/pre-trained/
 
       - /home/ubuntu/MLOps-project/airflow_settings.yaml:/usr/local/airflow/airflow_settings.yaml:z
 
@@ -105,7 +85,6 @@ services:
       io.astronomer.docker.component: "airflow-webserver"
     depends_on:
       - scheduler
-      # - postgres
     environment: *common-env-vars
 
     ports:
@@ -115,6 +94,8 @@ services:
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z
       - /home/ubuntu/MLOps-project/include:/usr/local/airflow/include:z
       - /home/ubuntu/MLOps-project/tests:/usr/local/airflow/tests:z
+      # [WARNING] Please don't remove below line. It's used to mount the pre-trained models to the container.
+      - /home/ubuntu/pre-trained/:/usr/local/pre-trained/
 
       - airflow_logs:/usr/local/airflow/logs
 
@@ -141,14 +122,14 @@ services:
       io.astronomer.docker: "true"
       io.astronomer.docker.cli: "true"
       io.astronomer.docker.component: "airflow-triggerer"
-    # depends_on:
-    #   - postgres
     environment: *common-env-vars
     volumes:
       - /home/ubuntu/MLOps-project/dags:/usr/local/airflow/dags:z
       - /home/ubuntu/MLOps-project/plugins:/usr/local/airflow/plugins:z
       - /home/ubuntu/MLOps-project/include:/usr/local/airflow/include:z
-
+      # [WARNING] Please don't remove below line. It's used to mount the pre-trained models to the container.
+      - /home/ubuntu/pre-trained/:/usr/local/pre-trained/
+      
       - airflow_logs:/usr/local/airflow/logs
 
     extra_hosts:
