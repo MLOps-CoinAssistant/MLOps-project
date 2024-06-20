@@ -1241,7 +1241,7 @@ async def preprocess_data(context: dict) -> None:
                 await session.execute(
                     select(BtcPreprocessed).order_by(BtcPreprocessed.time)
                 )
-                session.commit()
+                await session.commit()
                 logger.info("Sorting btc_preprocessed table by time")
                 count_final = await session.scalar(
                     select(func.count()).select_from(BtcPreprocessed)
