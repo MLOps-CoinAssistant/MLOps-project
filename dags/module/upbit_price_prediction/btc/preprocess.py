@@ -874,20 +874,25 @@ async def update_rsi_state_and_data(
             logger.info(
                 f"Updated RSI > 75 state: range_start={range_start_75}, range_end={range_end_75}, max_rsi={max_rsi_75}, max_rsi_time={max_rsi_time_75}"
             )
-
-            # 구간을 벗어났으므로 rsi_over업데이트
-            update_query = f"""
-            UPDATE btc_preprocessed
-            SET rsi_over = CASE
-                            WHEN time <= '{max_rsi_time_75}' THEN 1
-                            WHEN time > '{max_rsi_time_75}' THEN 0
-                            END
-            WHERE time BETWEEN '{range_start_75}' AND '{range_end_75}'
-            AND rsi_14 >= 75
-            """
-            await conn.execute(text(update_query))
-            await conn.commit()
-            logger.info(f"Updated btc_preprocessed rsi_over based on max_rsi_time_75")
+            if (
+                range_start_75 != "1970-01-01 00:00:00"
+                and range_end_75 != "1970-01-01 00:00:00"
+            ):
+                # 구간을 벗어났으므로 rsi_over업데이트
+                update_query = f"""
+                UPDATE btc_preprocessed
+                SET rsi_over = CASE
+                                WHEN time <= '{max_rsi_time_75}' THEN 1
+                                WHEN time > '{max_rsi_time_75}' THEN 0
+                                END
+                WHERE time BETWEEN '{range_start_75}' AND '{range_end_75}'
+                AND rsi_14 >= 75
+                """
+                await conn.execute(text(update_query))
+                await conn.commit()
+                logger.info(
+                    f"Updated btc_preprocessed rsi_over based on max_rsi_time_75"
+                )
 
             # 상태 초기화
             range_start_75 = range_end_75 = max_rsi_time_75 = "1970-01-01 00:00:00"
@@ -914,20 +919,25 @@ async def update_rsi_state_and_data(
             logger.info(
                 f"Updated RSI < 25 state: range_start={range_start_25}, range_end={range_end_25}, min_rsi={min_rsi_25}, min_rsi_time={min_rsi_time_25}"
             )
-
-            # 구간을 벗어났으므로 rsi_over업데이트
-            update_query = f"""
-            UPDATE btc_preprocessed
-            SET rsi_over = CASE
-                            WHEN time <= '{min_rsi_time_25}' THEN 0
-                            WHEN time > '{min_rsi_time_25}' THEN 1
-                        END
-            WHERE time BETWEEN '{range_start_25}' AND '{range_end_25}'
-            AND rsi_14 <= 25
-            """
-            await conn.execute(text(update_query))
-            await conn.commit()
-            logger.info(f"Updated btc_preprocessed rsi_over based on min_rsi_time_25")
+            if (
+                range_start_25 != "1970-01-01 00:00:00"
+                and range_end_25 != "1970-01-01 00:00:00"
+            ):
+                # 구간을 벗어났으므로 rsi_over업데이트
+                update_query = f"""
+                UPDATE btc_preprocessed
+                SET rsi_over = CASE
+                                WHEN time <= '{min_rsi_time_25}' THEN 0
+                                WHEN time > '{min_rsi_time_25}' THEN 1
+                            END
+                WHERE time BETWEEN '{range_start_25}' AND '{range_end_25}'
+                AND rsi_14 <= 25
+                """
+                await conn.execute(text(update_query))
+                await conn.commit()
+                logger.info(
+                    f"Updated btc_preprocessed rsi_over based on min_rsi_time_25"
+                )
 
             # 상태 초기화
             range_start_25 = range_end_25 = min_rsi_time_25 = "1970-01-01 00:00:00"
