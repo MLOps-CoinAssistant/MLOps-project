@@ -548,15 +548,20 @@ async def add_rsi_over(session: AsyncSession, first_time: str, last_time: str) -
     )
 
     # 25 <= rsi <= 75 인 구간
-    await session.execute(
-        text(
-            f"""
-            UPDATE btc_preprocessed
-            SET rsi_over = 2
-            WHERE time BETWEEN '{first_time}' AND '{last_time}';
-            """
-        )
+    stmt = (
+        update(BtcPreprocessed)
+        .where(BtcPreprocessed.time.between(first_time, last_time))
+        .values(rsi_over=2)
     )
+    await session.execute(stmt)
+    #     text(
+    #         f"""
+    #         UPDATE btc_preprocessed
+    #         SET rsi_over = 2
+    #         WHERE time BETWEEN '{first_time}' AND '{last_time}';
+    #         """
+    #     )
+    # )
     await session.commit()
 
     """
@@ -807,7 +812,7 @@ async def update_rsi_state_and_data(
     logger.info(f"Fetched {len(new_data_df)} rows from btc_preprocessed")
 
     # DB에서 상태 저장 테이블의 최신 상태 가져오기
-    rsi_75_state_query = "SELECT * FROM rsi_75_state ORDER BY range_end ASC LIMIT 1;"
+    rsi_75_state_query = "SELECT * FROM rsi_75_state ORDER BY range_end DESC LIMIT 1;"
     result_75 = await session.execute(text(rsi_75_state_query))
     state_75 = result_75.fetchone()
 
@@ -820,7 +825,7 @@ async def update_rsi_state_and_data(
         range_start_75 = range_end_75 = max_rsi_time_75 = "1970-01-01 00:00:00"
         max_rsi_75 = 0
 
-    rsi_25_state_query = "SELECT * FROM rsi_25_state ORDER BY range_end ASC LIMIT 1;"
+    rsi_25_state_query = "SELECT * FROM rsi_25_state ORDER BY range_end DESC LIMIT 1;"
     result_25 = await session.execute(text(rsi_25_state_query))
     state_25 = result_25.fetchone()
 
@@ -1237,12 +1242,6 @@ async def preprocess_data(context: dict) -> None:
                 # else:
                 #     await standard_scale_data(session, past_new_time, current_time_dt)
 
-                # 삽입된 데이터를 시간순으로 정렬
-                await session.execute(
-                    select(BtcPreprocessed).order_by(BtcPreprocessed.time)
-                )
-                await session.commit()
-                logger.info("Sorting btc_preprocessed table by time")
                 count_final = await session.scalar(
                     select(func.count()).select_from(BtcPreprocessed)
                 )

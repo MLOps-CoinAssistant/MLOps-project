@@ -23,6 +23,8 @@ orjson = "^3.10.3"
 minio = "^7.2.7"
 catboost = "^1.2.5"
 python-dotenv = "^1.0.1"
+redis = "^5.0.6"
+starlette-context = "^0.3.6"
 
 
 [build-system]

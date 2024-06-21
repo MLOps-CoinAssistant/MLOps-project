@@ -10,7 +10,7 @@ class BtcOhlcvResp:
     high: int = Field(..., title="High")
     low: int = Field(..., title="Low")
     close: int = Field(..., title="Close")
-    volume: int = Field(..., title="Volume")
+    volume: float = Field(..., title="Volume")
 
 
 @dataclass
@@ -20,4 +20,9 @@ class BtcPreprocessedResp:
     high: int = Field(..., title="High")
     low: int = Field(..., title="Low")
     close: int = Field(..., title="Close")
-    volume: int = Field(..., title="Volume")
+    volume: float = Field(..., title="Volume")
+    ma_7: int = Field(..., title="MA_7")
+    ma_14: int = Field(..., title="MA_14")
+    ma_30: int = Field(..., title="MA_30")
+    rsi_14: float = Field(..., title="RSI")
+    rsi_over: float = Field(..., title="RSI_over")
