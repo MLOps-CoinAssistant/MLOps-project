@@ -1,8 +1,6 @@
 from dags.module.upbit_price_prediction.btc.create_table import (
     BtcOhlcv,
     BtcPreprocessed,
-    BtcRsiState_75,
-    BtcRsiState_25,
 )
 from sqlalchemy import select, func, text, and_, update, bindparam
 from sqlalchemy.ext.asyncio import (
@@ -546,14 +544,19 @@ async def add_rsi_over(session: AsyncSession, first_time: str, last_time: str) -
     logger.info(
         f"Add RSI_OVER in btc_preprocessed between {first_time} and {last_time}"
     )
+    logger.info(
+        f"type of first_time : {type(first_time)} , type of last_time : {type(last_time)}"
+    )
 
     # 25 <= rsi <= 75 인 구간
-    stmt = (
-        update(BtcPreprocessed)
-        .where(BtcPreprocessed.time.between(first_time, last_time))
-        .values(rsi_over=2)
+    update_query = text(
+        f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 2
+        WHERE time BETWEEN '{first_time}' AND '{last_time}';
+        """
     )
-    await session.execute(stmt)
+    await session.execute(update_query)
     #     text(
     #         f"""
     #         UPDATE btc_preprocessed
@@ -1164,7 +1167,7 @@ async def preprocess_data(context: dict) -> None:
             # 비동기 코드에서 동기 메소드를 호출할 수 있게 해줌. 테이블이 존재하지 않는 경우에만 테이블을 생성시킨다.
             await conn.run_sync(Base.metadata.create_all)
             await conn.commit()
-            logger.info("Creating btc_preprocessed table if not exists")
+            logger.info("Creating table if not exists")
 
             async with AsyncScopedSession() as session:
                 # await insert_null_data(session) : 테스트용
