@@ -63,7 +63,7 @@ def train_catboost_model_fn(**context: dict) -> None:
 
     df = asyncio.run(load_data(engine))
 
-    X = df.drop(columns=["label"])
+    X = df.drop(columns=["label", "time"])
     y = df["label"]
 
     # 시계열 데이터를 시간 순서에 따라 분할
