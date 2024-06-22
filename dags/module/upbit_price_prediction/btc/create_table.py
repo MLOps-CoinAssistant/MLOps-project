@@ -9,7 +9,6 @@ from sqlalchemy import (
     Float,
     Sequence,
     TIMESTAMP,
-    Numeric,
 )
 from sqlalchemy.orm import declarative_base
 from airflow.exceptions import AirflowSkipException

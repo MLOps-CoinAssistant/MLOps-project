@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.core.minio import get_model_uri, load_model_and_metadata, get_latest_model_path
+from app.core.redis import RedisCacheDecorator
 from app.models.schemas.common import BaseResponse, HttpResponse
 from app.models.schemas.predict import BtcPredictionResp
 from typing import List
@@ -13,6 +14,7 @@ router = APIRouter()
 
 
 @router.get("/predict", response_model=BaseResponse[List[BtcPredictionResp]])
+@RedisCacheDecorator()
 async def predict() -> HttpResponse:
 
     bucket_name = "mlflow"
@@ -28,8 +30,14 @@ async def predict() -> HttpResponse:
     # 예측 결과 : 모델이 예측한 결과의 평균을 0.5를 기준으로 다음 정각의 가격을 "상승" or "하락" 으로 판단
     # 확률 : 이 예측이 정확한 정도를 "확률 (%)" 로 표기
 
-    prediction: str = "상승" if average_proba >= 0.5 else "하락"
-    confidence: float = round(average_proba * 100, 1)  # 소수점 한 자리로 반올림
+    if average_proba >= 0.5:
+        prediction: str = "상승"
+        confidence: float = round(average_proba * 100, 1)  # 소수점 한 자리로 반올림
+    else:
+        prediction: str = "하락"
+        confidence: float = round(
+            (100 - average_proba * 100), 1
+        )  # 소수점 한 자리로 반올림
 
     response_data: List[BtcPredictionResp] = [
         BtcPredictionResp(prediction=prediction, confidence=confidence)

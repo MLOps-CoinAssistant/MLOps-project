@@ -1,8 +1,10 @@
+from dags.module.upbit_price_prediction.btc.create_table import BtcPreprocessed
+
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from catboost import CatBoostClassifier, Pool
 from sklearn.metrics import accuracy_score, classification_report, f1_score
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy import text
+from sqlalchemy import select
 from optuna.storages import RDBStorage
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
@@ -26,15 +28,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def load_data(engine) -> pd.DataFrame:
-    query = """
-        SELECT * FROM btc_preprocessed
-    """
+async def load_data(engine: AsyncSession) -> pd.DataFrame:
     # 이 파일에서는 비동기작업은 여기서 딱1번 하기 때문에 asyncscopedsession, sessionmaker등은 불필요
     async with AsyncSession(engine) as session:
-        result = await session.execute(text(query))
-        df = pd.DataFrame(result.fetchall(), columns=result.keys())
+        query = """
+        SELECT * FROM (
+            SELECT * FROM btc_preprocessed
+            ORDER BY time DESC
+        ) AS subquery
+        ORDER BY time ASC;
+        """
+        result = await session.execute(query)
+        data = result.fetchall()
 
+        columns = result.keys()
+        df = pd.DataFrame(data, columns=columns)
     return df
 
 
@@ -73,16 +81,30 @@ def train_catboost_model_fn(**context: dict) -> None:
             "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True),
             "depth": trial.suggest_int("depth", 6, 12),
             "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1e-5, 10, log=True),
-            "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 0.1), # bagging_temperature를 0에 가깝게 설정하여 데이터의 무작위성을 최소화한다.
+            "bagging_temperature": trial.suggest_float(
+                "bagging_temperature", 0.0, 0.1
+            ),  # bagging_temperature를 0에 가깝게 설정하여 데이터의 무작위성을 최소화한다.
             "border_count": trial.suggest_int("border_count", 32, 255),  # 분할 수 설정
-            "feature_border_type": trial.suggest_categorical("feature_border_type", ["Median", "Uniform", "UniformAndQuantiles", "MaxLogSum", "MinEntropy", "GreedyLogSum"]),  # 경계 유형 설정
-            "random_strength": trial.suggest_float("random_strength", 1e-3, 10, log=True),  # 랜덤화 강도 조절
+            "feature_border_type": trial.suggest_categorical(
+                "feature_border_type",
+                [
+                    "Median",
+                    "Uniform",
+                    "UniformAndQuantiles",
+                    "MaxLogSum",
+                    "MinEntropy",
+                    "GreedyLogSum",
+                ],
+            ),  # 경계 유형 설정
+            "random_strength": trial.suggest_float(
+                "random_strength", 1e-3, 10, log=True
+            ),  # 랜덤화 강도 조절
         }
 
         model = CatBoostClassifier(**params, logging_level="Info")
         model.fit(train_pool, eval_set=valid_pool, early_stopping_rounds=50)
         preds = model.predict(valid_pool)
-        
+
         # 클래스 분포 확인
         class_distribution = np.bincount(y_valid)
         imbalance_ratio = class_distribution.max() / class_distribution.min()

@@ -1,8 +1,6 @@
 from dags.module.upbit_price_prediction.btc.create_table import (
     BtcOhlcv,
     BtcPreprocessed,
-    BtcRsiState_75,
-    BtcRsiState_25,
 )
 from sqlalchemy import select, func, text, and_, update, bindparam
 from sqlalchemy.ext.asyncio import (
@@ -413,7 +411,7 @@ async def load_all_data(session: AsyncSession):
 
 
 async def add_moving_average(
-    conn: AsyncSession, first_time: str, last_time: str
+    session: AsyncSession, first_time: str, last_time: str
 ) -> None:
     """
     이동평균선(MA)를 만드는 함수( 7일, 14일, 30일 )
@@ -421,7 +419,7 @@ async def add_moving_average(
     logger.info(
         f"Add MA_7, MA_14, MA_30 in btc_preprocessed  between {first_time} and {last_time}"
     )
-    await conn.execute(
+    await session.execute(
         text(
             f"""
             WITH subquery AS (
@@ -445,18 +443,18 @@ async def add_moving_average(
         )
     )
 
-    await conn.commit()
+    await session.commit()
     logger.info("MA add success")
 
 
-async def add_ema(conn: AsyncSession, first_time: str, last_time: str) -> None:
+async def add_ema(session: AsyncSession, first_time: str, last_time: str) -> None:
     """
     지수이동평균선(EMA)을 만드는 함수( 7일, 14일, 30일 )
     """
     logger.info(
         f"Add EMA_7, EMA_14, EMA_30 in btc_preprocessed between {first_time} and {last_time}"
     )
-    await conn.execute(
+    await session.execute(
         text(
             """
             ALTER TABLE btc_preprocessed
@@ -466,7 +464,7 @@ async def add_ema(conn: AsyncSession, first_time: str, last_time: str) -> None:
             """
         )
     )
-    await conn.execute(
+    await session.execute(
         text(
             f"""
             WITH subquery AS (
@@ -489,16 +487,16 @@ async def add_ema(conn: AsyncSession, first_time: str, last_time: str) -> None:
         """
         )
     )
-    await conn.commit()
+    await session.commit()
     logger.info("EMA add success")
 
 
-async def add_rsi(conn: AsyncSession, first_time: str, last_time: str) -> None:
+async def add_rsi(session: AsyncSession, first_time: str, last_time: str) -> None:
     """
     RSI(14일 기준의 상대강도지수) 를 만드는 함수.
     """
     logger.info(f"Add RSI_14 in btc_preprocessed between {first_time} and {last_time}")
-    await conn.execute(
+    await session.execute(
         text(
             f"""
             WITH gains_and_losses AS (
@@ -534,380 +532,11 @@ async def add_rsi(conn: AsyncSession, first_time: str, last_time: str) -> None:
             """
         )
     )
-    await conn.commit()
+    await session.commit()
     logger.info("RSI add success")
 
 
-async def add_rsi_over2(conn: AsyncSession, first_time: str, last_time: str) -> None:
-    """
-    RSI_14 값을 기반으로 rsi_over 피쳐를 추가하는 함수. (최초삽입시에만 호출)
-
-    - 설명
-    rsi를 매매에 활용하는 방식 중 하나로 rsi의 수치를 통해 과매수, 과매도 상태를 판별하는 방법이 있습니다.
-    rsi가 높을 경우(보통 70~80이상) 과매수 구간으로 판단해서, 매도했을 때 수익이 날 가능성이 높다고 말합니다.(하락 가능성이 높은 상황)
-    반대로 rsi가 낮을 경우(보통 20~30이하) 과매도 구간으로 판단해서, 매수했을 때 수익이 날 가능성이 높다고 말합니다. (상승 가능성이 높은 상황)
-    이 내용은 기존에 널리 알려져 있는 부분이고, 여기에서 추가로 저의 나름대로의 매매 노하우를 담아서 새로운 피쳐를 만들었습니다.
-    rsi가 25, 75를 기준으로 넘어가있는 rsi에 대하여 가장 높거나, 낮게 설정되어있는 꼭지점을 찾아서 그 꼭지점을 기준으로 과거시간, 미래시간에 대해 각각 숫자를 부여합니다.
-    25~75 사이의 값에 대해서는 같은 숫자를 부여합니다.
-    이러한 계산방식으로 숫자를 매핑하는 이유는 각 영역에서 극값을 갖는 rsi는 대부분이 뾰족한 형태로 나타나며, 이는 강력한 매수,매도 신호가 되기 때문입니다.
-
-    - 과정
-    1) 25 <= rsi <= 75 인 경우 : rsi_over = 2
-    2) rsi > 75 의 조건에 들어갔을 때 부터 rsi < 75 가 되는순간 사이의 rsi값 중 최고값을 찾아서 그 최고값의 시간을 기준으로 과거시간 : 1 (상승을의미), 미래시간 : 0 (하락을의미)
-    3) rsi < 25 의 조건에 들어갔을 때 부터 rsi > 25 가 되는 순간 사이의 rsi값 중 최저값을 찾아서 그 최저값의 시간을 기준으로 과거시간 : 0 (하락), 미래시간 : 1, (상승)
-
-    """
-
-    logger.info(
-        f"Add RSI_OVER in btc_preprocessed between {first_time} and {last_time}"
-    )
-
-    # 25 <= rsi <= 75 인 구간
-    await conn.execute(
-        text(
-            f"""
-            UPDATE btc_preprocessed
-            SET rsi_over = 2
-            WHERE time BETWEEN '{first_time}' AND '{last_time}';
-            """
-        )
-    )
-    await conn.commit()
-
-    # # 3개 이상일때만 적용
-    # if datetime.fromisoformat(first_time) - datetime.fromisoformat(last_time) <= timedelta(minutes=10):
-    #     logger.info("There is not enough data")
-    #     return
-    # rsi > 75 인 구간
-    """
-    - 서브쿼리 설명
-
-    rsi_75_intervals : rsi가 75이상인 구간을 찾습니다. 75이상이면 start, 이하면 end로 interval_marker 설정
-
-    rsi_75_ranges : SUM을 사용하여 구간의 시작과 끝을 식별합니다.
-    75이상인 구간부터 start, end가 각각 등장할 때 마다 1씩 증가시켜 두 합을 비교해서 75이상인 구간을 찾습니다.
-    구간이 끝날 때 마다 reset_count를 증가시킵니다.
-
-    reset_ranges_75 : 이전 구간 종료 여부(이전 행의 reset_count보다 클때)를 확인해서 누적합계(range_start, range_end)를 초기화합니다. (75이상인 구간이 여러번 나올 것이므로)
-    이 때 reset = 1 로 설정하여 구간이 종료됐음을 나타냅니다.
-
-    max_rsi_75 : 각 구간 내에서 최고값과 그 시점을 찾습니다. reset_count를 group by 해서 구간을 분리합니다.
-
-    UPDATE : 구간 내 최고값을 기준으로 과거에는 1, 미래에는 0 을 부여합니다. reset_count를 통해 구간을 구분합니다.
-    """
-    await conn.execute(
-        text(
-            f"""
-            WITH rsi_75_intervals AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    CASE
-                        WHEN rsi_14 >= 75 THEN 'start'
-                        WHEN rsi_14 < 75 THEN 'end'
-                    END AS interval_marker
-                FROM btc_preprocessed
-                WHERE time BETWEEN '{first_time}' AND '{last_time}'
-            ),
-            rsi_75_ranges AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    interval_marker,
-                    CASE
-                        WHEN interval_marker = 'start' THEN
-                            SUM(CASE WHEN interval_marker = 'start' THEN 1 ELSE 0 END) OVER (ORDER BY time)
-                        ELSE 0
-                    END AS range_start,
-                    CASE
-                        WHEN interval_marker = 'end' THEN
-                            SUM(CASE WHEN interval_marker = 'end' THEN 1 ELSE 0 END) OVER (ORDER BY time)
-                        ELSE 0
-                    END AS range_end,
-                    COUNT(CASE WHEN interval_marker = 'end' THEN 1 ELSE NULL END) OVER (ORDER BY time) AS reset_count
-                FROM rsi_75_intervals
-            ),
-            reset_ranges_75 AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    interval_marker,
-                    CASE
-                        WHEN LAG(reset_count, 1, 0) OVER (ORDER BY time) < reset_count THEN 0
-                        ELSE range_start
-                    END AS range_start,
-                    CASE
-                        WHEN LAG(reset_count, 1, 0) OVER (ORDER BY time) < reset_count THEN 0
-                        ELSE range_end
-                    END AS range_end,
-                    reset_count
-                FROM rsi_75_ranges
-            ),
-            max_rsi_75 AS (
-                SELECT
-                    reset_count,
-                    MAX(rsi_14) AS max_rsi
-                FROM reset_ranges_75
-                WHERE range_start > range_end
-                GROUP BY reset_count
-            ),
-            max_time_75 AS (
-                SELECT
-                    reset_count,
-                    MIN(time) AS max_time
-                FROM reset_ranges_75
-                WHERE rsi_14 = (SELECT max_rsi FROM max_rsi_75 WHERE max_rsi_75.reset_count = reset_ranges_75.reset_count)
-                GROUP BY reset_count
-            )
-            UPDATE btc_preprocessed
-            SET rsi_over = CASE
-                            WHEN btc_preprocessed.time <= max_time_75.max_time THEN 1
-                            WHEN btc_preprocessed.time > max_time_75.max_time THEN 0
-                            ELSE btc_preprocessed.rsi_over
-                          END
-            FROM max_rsi_75, reset_ranges_75, max_time_75
-            WHERE btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}'
-            AND btc_preprocessed.rsi_14 >= 75
-            AND reset_ranges_75.reset_count = max_rsi_75.reset_count
-            AND btc_preprocessed.time = reset_ranges_75.time
-            AND max_time_75.reset_count = reset_ranges_75.reset_count;
-            """
-        )
-    )
-    await conn.commit()
-
-    await conn.execute(
-        text(
-            "ALTER TABLE rsi_75_state ALTER COLUMN id SET DEFAULT nextval('rsi_75_state_id_seq')"
-        )
-    )
-
-    # 가장 최근의 75 이상 구간을 찾아서 rsi_75_state 테이블에 상태 저장
-    await conn.execute(
-        text(
-            """
-            WITH latest_rsi_75_range AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    CASE
-                        WHEN rsi_14 >= 75 THEN 'start'
-                        ELSE 'end'
-                    END AS interval_marker,
-                    SUM(CASE WHEN rsi_14 >= 75 THEN 1 ELSE 0 END) OVER (ORDER BY time) -
-                    SUM(CASE WHEN rsi_14 < 75 THEN 1 ELSE 0 END) OVER (ORDER BY time) AS range_count
-                FROM btc_preprocessed
-                WHERE rsi_14 >= 75 OR (
-                    rsi_14 < 75 AND EXISTS (
-                        SELECT 1
-                        FROM btc_preprocessed sub
-                        WHERE sub.time < btc_preprocessed.time
-                        AND sub.rsi_14 >= 75
-                    )
-                )
-            ),
-            filtered_rsi_75_ranges AS (
-                SELECT *
-                FROM latest_rsi_75_range
-                WHERE range_count > 0
-            ),
-            recent_rsi_75_range AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    interval_marker,
-                    range_count,
-                    MAX(range_count) OVER () AS max_range_count
-                FROM filtered_rsi_75_ranges
-            ),
-            recent_rsi_75 AS (
-                SELECT *
-                FROM recent_rsi_75_range
-                WHERE range_count = max_range_count
-            ),
-            max_rsi_75 AS (
-                SELECT
-                    MAX(rsi_14) AS max_rsi
-                FROM recent_rsi_75
-            ),
-            max_rsi_time_75 AS (
-                SELECT
-                    time AS max_rsi_time
-                FROM recent_rsi_75
-                WHERE rsi_14 = (SELECT max_rsi FROM max_rsi_75)
-            )
-            INSERT INTO rsi_75_state (range_start, range_end, max_rsi, max_rsi_time)
-            SELECT
-                COALESCE(MIN(time), '1970-01-01') AS range_start,
-                COALESCE(MAX(time), '1970-01-01') AS range_end,
-                (SELECT max_rsi FROM max_rsi_75) AS max_rsi,
-                (SELECT max_rsi_time FROM max_rsi_time_75) AS max_rsi_time
-            FROM recent_rsi_75;
-            """
-        )
-    )
-
-    await conn.commit()
-
-    # rsi < 25인 구간
-    await conn.execute(
-        text(
-            f"""
-            WITH rsi_25_intervals AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    CASE
-                        WHEN rsi_14 <= 25 THEN 'start'
-                        WHEN rsi_14 > 25 THEN 'end'
-                    END AS interval_marker
-                FROM btc_preprocessed
-                WHERE time BETWEEN '{first_time}' AND '{last_time}'
-            ),
-            rsi_25_ranges AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    interval_marker,
-                    CASE
-                        WHEN interval_marker = 'start' THEN
-                            SUM(CASE WHEN interval_marker = 'start' THEN 1 ELSE 0 END) OVER (ORDER BY time)
-                        ELSE 0
-                    END AS range_start,
-                    CASE
-                        WHEN interval_marker = 'end' THEN
-                            SUM(CASE WHEN interval_marker = 'end' THEN 1 ELSE 0 END) OVER (ORDER BY time)
-                        ELSE 0
-                    END AS range_end,
-                    COUNT(CASE WHEN interval_marker = 'end' THEN 1 ELSE NULL END) OVER (ORDER BY time) AS reset_count
-                FROM rsi_25_intervals
-            ),
-            reset_ranges_25 AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    interval_marker,
-                    CASE
-                        WHEN LAG(reset_count, 1, 0) OVER (ORDER BY time) < reset_count THEN 0
-                        ELSE range_start
-                    END AS range_start,
-                    CASE
-                        WHEN LAG(reset_count, 1, 0) OVER (ORDER BY time) < reset_count THEN 0
-                        ELSE range_end
-                    END AS range_end,
-                    reset_count
-                FROM rsi_25_ranges
-            ),
-            min_rsi_25 AS (
-                SELECT
-                    reset_count,
-                    MIN(rsi_14) AS min_rsi
-                FROM reset_ranges_25
-                WHERE range_start > range_end
-                GROUP BY reset_count
-            ),
-            min_time_25 AS (
-                SELECT
-                    reset_count,
-                    MIN(time) AS min_time
-                FROM reset_ranges_25
-                WHERE rsi_14 = (SELECT min_rsi FROM min_rsi_25 WHERE min_rsi_25.reset_count = reset_ranges_25.reset_count)
-                GROUP BY reset_count
-            )
-            UPDATE btc_preprocessed
-            SET rsi_over = CASE
-                            WHEN btc_preprocessed.time <= min_time_25.min_time THEN 0
-                            WHEN btc_preprocessed.time > min_time_25.min_time THEN 1
-                            ELSE btc_preprocessed.rsi_over
-                          END
-            FROM min_rsi_25, reset_ranges_25, min_time_25
-            WHERE btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}'
-            AND btc_preprocessed.rsi_14 <= 25
-            AND reset_ranges_25.reset_count = min_rsi_25.reset_count
-            AND btc_preprocessed.time = reset_ranges_25.time
-            AND min_time_25.reset_count = reset_ranges_25.reset_count;
-            """
-        )
-    )
-
-    await conn.commit()
-
-    await conn.execute(
-        text(
-            "ALTER TABLE rsi_25_state ALTER COLUMN id SET DEFAULT nextval('rsi_25_state_id_seq')"
-        )
-    )
-
-    # 가장 최근의 25이하 구간을 찾아 rsi_25_state 테이블에 상태 저장
-    await conn.execute(
-        text(
-            """
-            WITH latest_rsi_25_range AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    CASE
-                        WHEN rsi_14 <= 25 THEN 'start'
-                        ELSE 'end'
-                    END AS interval_marker,
-                    SUM(CASE WHEN rsi_14 <= 25 THEN 1 ELSE 0 END) OVER (ORDER BY time) -
-                    SUM(CASE WHEN rsi_14 > 25 THEN 1 ELSE 0 END) OVER (ORDER BY time) AS range_count
-                FROM btc_preprocessed
-                WHERE rsi_14 <= 25 OR (
-                    rsi_14 > 25 AND EXISTS (
-                        SELECT 1
-                        FROM btc_preprocessed sub
-                        WHERE sub.time < btc_preprocessed.time
-                        AND sub.rsi_14 <= 25
-                    )
-                )
-            ),
-            filtered_rsi_25_ranges AS (
-                SELECT *
-                FROM latest_rsi_25_range
-                WHERE range_count > 0
-            ),
-            recent_rsi_25_range AS (
-                SELECT
-                    time,
-                    rsi_14,
-                    interval_marker,
-                    range_count,
-                    MAX(range_count) OVER () AS max_range_count
-                FROM filtered_rsi_25_ranges
-            ),
-            recent_rsi_25 AS (
-                SELECT *
-                FROM recent_rsi_25_range
-                WHERE range_count = max_range_count
-            ),
-            min_rsi_25 AS (
-                SELECT
-                    MIN(rsi_14) AS min_rsi
-                FROM recent_rsi_25
-            ),
-            min_rsi_time_25 AS (
-                SELECT
-                    time AS min_rsi_time
-                FROM recent_rsi_25
-                WHERE rsi_14 = (SELECT min_rsi FROM min_rsi_25)
-            )
-            INSERT INTO rsi_25_state (range_start, range_end, min_rsi, min_rsi_time)
-            SELECT
-                COALESCE(MIN(time), '1970-01-01') AS range_start,
-                COALESCE(MAX(time), '1970-01-01') AS range_end,
-                (SELECT min_rsi FROM min_rsi_25) AS min_rsi,
-                (SELECT min_rsi_time FROM min_rsi_time_25) AS min_rsi_time
-            FROM recent_rsi_25;
-            """
-        )
-    )
-
-    await conn.commit()
-    logger.info("RSI_OVER add success")
-
-
-async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> None:
+async def add_rsi_over(session: AsyncSession, first_time: str, last_time: str) -> None:
     """
     RSI_14 값을 기반으로 rsi_over 피쳐를 추가하는 함수. (최초 삽입 시에만 호출)
     """
@@ -915,18 +544,28 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
     logger.info(
         f"Add RSI_OVER in btc_preprocessed between {first_time} and {last_time}"
     )
+    logger.info(
+        f"type of first_time : {type(first_time)} , type of last_time : {type(last_time)}"
+    )
 
     # 25 <= rsi <= 75 인 구간
-    await conn.execute(
-        text(
-            f"""
-            UPDATE btc_preprocessed
-            SET rsi_over = 2
-            WHERE time BETWEEN '{first_time}' AND '{last_time}';
-            """
-        )
+    update_query = text(
+        f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 2
+        WHERE time BETWEEN '{first_time}' AND '{last_time}';
+        """
     )
-    await conn.commit()
+    await session.execute(update_query)
+    #     text(
+    #         f"""
+    #         UPDATE btc_preprocessed
+    #         SET rsi_over = 2
+    #         WHERE time BETWEEN '{first_time}' AND '{last_time}';
+    #         """
+    #     )
+    # )
+    await session.commit()
 
     """
     - 서브쿼리 설명
@@ -944,7 +583,8 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
 
     UPDATE : 구간 내 최고값을 기준으로 과거에는 1, 미래에는 0 을 부여합니다. reset_count를 통해 구간을 구분합니다.
     """
-    await conn.execute(
+
+    await session.execute(
         text(
             f"""
             WITH rsi_75_intervals AS (
@@ -1013,7 +653,7 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
                             WHEN btc_preprocessed.time <= max_time_75.max_time THEN 1
                             WHEN btc_preprocessed.time > max_time_75.max_time THEN 0
                             ELSE btc_preprocessed.rsi_over
-                          END
+                        END
             FROM max_rsi_75, reset_ranges_75, max_time_75
             WHERE btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}'
             AND btc_preprocessed.rsi_14 >= 75
@@ -1023,16 +663,10 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
             """
         )
     )
-    await conn.commit()
-
-    await conn.execute(
-        text(
-            "ALTER TABLE rsi_75_state ALTER COLUMN id SET DEFAULT nextval('rsi_75_state_id_seq')"
-        )
-    )
+    await session.commit()
 
     # rsi_75_state 테이블에 상태 저장
-    await conn.execute(
+    await session.execute(
         text(
             f"""
             INSERT INTO rsi_75_state (range_start, range_end, max_rsi, max_rsi_time)
@@ -1048,10 +682,8 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
         )
     )
 
-    await conn.commit()
-
     # rsi < 25인 구간
-    await conn.execute(
+    await session.execute(
         text(
             f"""
             WITH rsi_25_intervals AS (
@@ -1120,7 +752,7 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
                             WHEN btc_preprocessed.time <= min_time_25.min_time THEN 0
                             WHEN btc_preprocessed.time > min_time_25.min_time THEN 1
                             ELSE btc_preprocessed.rsi_over
-                          END
+                        END
             FROM min_rsi_25, reset_ranges_25, min_time_25
             WHERE btc_preprocessed.time BETWEEN '{first_time}' AND '{last_time}'
             AND btc_preprocessed.rsi_14 <= 25
@@ -1131,15 +763,10 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
         )
     )
 
-    await conn.commit()
+    await session.commit()
 
-    await conn.execute(
-        text(
-            "ALTER TABLE rsi_25_state ALTER COLUMN id SET DEFAULT nextval('rsi_25_state_id_seq')"
-        )
-    )
     # rsi_25_state 테이블에 상태 저장
-    await conn.execute(
+    await session.execute(
         text(
             f"""
             INSERT INTO rsi_25_state (range_start, range_end, min_rsi, min_rsi_time)
@@ -1154,13 +781,13 @@ async def add_rsi_over(conn: AsyncSession, first_time: str, last_time: str) -> N
             """
         )
     )
+    await session.commit()
 
-    await conn.commit()
     logger.info("RSI_OVER add success")
 
 
 async def update_rsi_state_and_data(
-    conn: AsyncSession, first_time: str, last_time: str
+    session: AsyncSession, first_time: str, last_time: str
 ) -> None:
     """
     rsi_over 피쳐의 계산을 위해 미리 rsi_state 테이블에 저장하고,
@@ -1181,29 +808,15 @@ async def update_rsi_state_and_data(
     WHERE time BETWEEN '{first_time}' AND '{last_time}'
     ORDER BY time
     """
-    result = await conn.execute(text(query))
+    result = await session.execute(text(query))
 
     # 새로 들어온 데이터를 데이터프레임으로 변환
     new_data_df = pd.DataFrame(result.fetchall(), columns=["time", "rsi_14"])
-
-    # state 테이블의 인덱스 시퀀스를 설정하여 1씩 증가하도록함
-    await conn.execute(
-        text(
-            "ALTER TABLE rsi_25_state ALTER COLUMN id SET DEFAULT nextval('rsi_25_state_id_seq')"
-        )
-    )
-    await conn.commit()
-
-    await conn.execute(
-        text(
-            "ALTER TABLE rsi_75_state ALTER COLUMN id SET DEFAULT nextval('rsi_75_state_id_seq')"
-        )
-    )
-    await conn.commit()
+    logger.info(f"Fetched {len(new_data_df)} rows from btc_preprocessed")
 
     # DB에서 상태 저장 테이블의 최신 상태 가져오기
-    rsi_75_state_query = "SELECT * FROM rsi_75_state ORDER BY id DESC LIMIT 1"
-    result_75 = await conn.execute(text(rsi_75_state_query))
+    rsi_75_state_query = "SELECT * FROM rsi_75_state ORDER BY range_end DESC LIMIT 1;"
+    result_75 = await session.execute(text(rsi_75_state_query))
     state_75 = result_75.fetchone()
 
     if state_75:
@@ -1215,8 +828,8 @@ async def update_rsi_state_and_data(
         range_start_75 = range_end_75 = max_rsi_time_75 = "1970-01-01 00:00:00"
         max_rsi_75 = 0
 
-    rsi_25_state_query = "SELECT * FROM rsi_25_state ORDER BY id DESC LIMIT 1"
-    result_25 = await conn.execute(text(rsi_25_state_query))
+    rsi_25_state_query = "SELECT * FROM rsi_25_state ORDER BY range_end DESC LIMIT 1;"
+    result_25 = await session.execute(text(rsi_25_state_query))
     state_25 = result_25.fetchone()
 
     if state_25:
@@ -1228,20 +841,8 @@ async def update_rsi_state_and_data(
         range_start_25 = range_end_25 = min_rsi_time_25 = "1970-01-01 00:00:00"
         min_rsi_25 = 100
 
-    query = f"""
-    SELECT time, rsi_14
-    FROM btc_preprocessed
-    WHERE time BETWEEN '{first_time}' AND '{last_time}'
-    ORDER BY time
-    """
-
-    result = await conn.execute(
-        text(query), {"first_time": first_time, "last_time": last_time}
-    )
-    new_data_df = pd.DataFrame(result.fetchall(), columns=["time", "rsi_14"])
-    logger.info(f"Fetched {len(new_data_df)} rows from btc_preprocessed")
-
     # 새로운 데이터를 기존 상태와 비교 및 업데이트
+
     for index, row in new_data_df.iterrows():
         time = row["time"]
         rsi_14 = row["rsi_14"]
@@ -1262,32 +863,31 @@ async def update_rsi_state_and_data(
             INSERT INTO rsi_75_state (range_start, range_end, max_rsi, max_rsi_time)
             VALUES ('{range_start_75}', '{range_end_75}', {max_rsi_75}, '{max_rsi_time_75}')
             """
-            await conn.execute(text(insert_query))
-            await conn.commit()
+            await session.execute(text(insert_query))
+            await session.commit()
 
             logger.info(
                 f"Updated RSI > 75 state: range_start={range_start_75}, range_end={range_end_75}, max_rsi={max_rsi_75}, max_rsi_time={max_rsi_time_75}"
             )
-
-            # 구간을 벗어났으므로 rsi_over업데이트
-            update_query = f"""
-            WITH max_time_75 AS (
-                SELECT max_rsi_time
-                FROM rsi_75_state
-                ORDER BY id DESC LIMIT 1
-            )
-            UPDATE btc_preprocessed
-            SET rsi_over = CASE
-                            WHEN time <= (SELECT max_rsi_time FROM max_time_75) THEN 1
-                            WHEN time > (SELECT max_rsi_time FROM max_time_75) THEN 0
-                            ELSE rsi_over
-                          END
-            WHERE time BETWEEN '{range_start_75}' AND '{range_end_75}'
-            AND rsi_14 >= 75
-            """
-            await conn.execute(text(update_query))
-            await conn.commit()
-            logger.info(f"Updated btc_preprocessed rsi_over based on max_rsi_time_75")
+            if (
+                range_start_75 != "1970-01-01 00:00:00"
+                and range_end_75 != "1970-01-01 00:00:00"
+            ):
+                # 구간을 벗어났으므로 rsi_over업데이트
+                update_query = f"""
+                UPDATE btc_preprocessed
+                SET rsi_over = CASE
+                                WHEN time <= '{max_rsi_time_75}' THEN 1
+                                WHEN time > '{max_rsi_time_75}' THEN 0
+                                END
+                WHERE time BETWEEN '{range_start_75}' AND '{range_end_75}'
+                AND rsi_14 >= 75
+                """
+                await session.execute(text(update_query))
+                await session.commit()
+                logger.info(
+                    f"Updated btc_preprocessed rsi_over based on max_rsi_time_75"
+                )
 
             # 상태 초기화
             range_start_75 = range_end_75 = max_rsi_time_75 = "1970-01-01 00:00:00"
@@ -1308,77 +908,75 @@ async def update_rsi_state_and_data(
             INSERT INTO rsi_25_state (range_start, range_end, min_rsi, min_rsi_time)
             VALUES ('{range_start_25}', '{range_end_25}', {min_rsi_25}, '{min_rsi_time_25}')
             """
-            await conn.execute(text(insert_query))
-            await conn.commit()
+            await session.execute(text(insert_query))
+            await session.commit()
 
             logger.info(
                 f"Updated RSI < 25 state: range_start={range_start_25}, range_end={range_end_25}, min_rsi={min_rsi_25}, min_rsi_time={min_rsi_time_25}"
             )
-
-            # 구간을 벗어났으므로 rsi_over업데이트
-            update_query = f"""
-            WITH min_time_25 AS (
-                SELECT min_rsi_time
-                FROM rsi_25_state
-                ORDER BY id DESC LIMIT 1
-            )
-            UPDATE btc_preprocessed
-            SET rsi_over = CASE
-                            WHEN time <= (SELECT min_rsi_time FROM min_time_25) THEN 0
-                            WHEN time > (SELECT min_rsi_time FROM min_time_25) THEN 1
-                            ELSE rsi_over
-                          END
-            WHERE time BETWEEN '{range_start_25}' AND '{range_end_25}'
-            AND rsi_14 <= 25
-            """
-            await conn.execute(text(update_query))
-            await conn.commit()
-            logger.info(f"Updated btc_preprocessed rsi_over based on min_rsi_time_25")
+            if (
+                range_start_25 != "1970-01-01 00:00:00"
+                and range_end_25 != "1970-01-01 00:00:00"
+            ):
+                # 구간을 벗어났으므로 rsi_over업데이트
+                update_query = f"""
+                UPDATE btc_preprocessed
+                SET rsi_over = CASE
+                                WHEN time <= '{min_rsi_time_25}' THEN 0
+                                WHEN time > '{min_rsi_time_25}' THEN 1
+                            END
+                WHERE time BETWEEN '{range_start_25}' AND '{range_end_25}'
+                AND rsi_14 <= 25
+                """
+                await session.execute(text(update_query))
+                await session.commit()
+                logger.info(
+                    f"Updated btc_preprocessed rsi_over based on min_rsi_time_25"
+                )
 
             # 상태 초기화
             range_start_25 = range_end_25 = min_rsi_time_25 = "1970-01-01 00:00:00"
             min_rsi_25 = 100
 
-    # 마지막 정보 테이블에 저장
-    if range_start_75 != "1970-01-01 00:00:00":
-        range_end_75 = time  # or use the last known time
-        insert_query = f"""
-        INSERT INTO rsi_75_state (range_start, range_end, max_rsi, max_rsi_time)
-        VALUES ('{range_start_75}', '{range_end_75}', {max_rsi_75}, '{max_rsi_time_75}')
+        # 마지막 정보 테이블에 저장
+        if range_start_75 != "1970-01-01 00:00:00":
+            range_end_75 = time  # or use the last known time
+            insert_query = f"""
+            INSERT INTO rsi_75_state (range_start, range_end, max_rsi, max_rsi_time)
+            VALUES ('{range_start_75}', '{range_end_75}', {max_rsi_75}, '{max_rsi_time_75}')
+            """
+            await session.execute(text(insert_query))
+            await session.commit()
+
+            logger.info(
+                f"Final Updated RSI > 75 state: range_start={range_start_75}, range_end={range_end_75}, max_rsi={max_rsi_75}, max_rsi_time={max_rsi_time_75}"
+            )
+
+        if range_start_25 != "1970-01-01 00:00:00":
+            range_end_25 = time  # or use the last known time
+            insert_query = f"""
+            INSERT INTO rsi_25_state (range_start, range_end, min_rsi, min_rsi_time)
+            VALUES ('{range_start_25}', '{range_end_25}', {min_rsi_25}, '{min_rsi_time_25}')
+            """
+            await session.execute(text(insert_query))
+            await session.commit()
+
+            logger.info(
+                f"Final Updated RSI < 25 state: range_start={range_start_25}, range_end={range_end_25}, min_rsi={min_rsi_25}, min_rsi_time={min_rsi_time_25}"
+            )
+
+        # 25~75사이구간 2로 업데이트
+        update_query = f"""
+        UPDATE btc_preprocessed
+        SET rsi_over = 2
+        WHERE time BETWEEN '{first_time}' AND '{last_time}'
+        AND rsi_14 > 25 AND rsi_14 < 75
         """
-        await conn.execute(text(insert_query))
-        await conn.commit()
+        await session.execute(text(update_query))
+        await session.commit()
+        logger.info(f"Set rsi_over to 2 for RSI between 25 and 75")
 
-        logger.info(
-            f"Final Updated RSI > 75 state: range_start={range_start_75}, range_end={range_end_75}, max_rsi={max_rsi_75}, max_rsi_time={max_rsi_time_75}"
-        )
-
-    if range_start_25 != "1970-01-01 00:00:00":
-        range_end_25 = time  # or use the last known time
-        insert_query = f"""
-        INSERT INTO rsi_25_state (range_start, range_end, min_rsi, min_rsi_time)
-        VALUES ('{range_start_25}', '{range_end_25}', {min_rsi_25}, '{min_rsi_time_25}')
-        """
-        await conn.execute(text(insert_query))
-        await conn.commit()
-
-        logger.info(
-            f"Final Updated RSI < 25 state: range_start={range_start_25}, range_end={range_end_25}, min_rsi={min_rsi_25}, min_rsi_time={min_rsi_time_25}"
-        )
-
-    # Update rsi_over for RSI between 25 and 75
-    update_query = f"""
-    UPDATE btc_preprocessed
-    SET rsi_over = 2
-    WHERE time BETWEEN '{first_time}' AND '{last_time}'
-    AND rsi_14 > 25 AND rsi_14 < 75
-    """
-    await conn.execute(text(update_query))
-    await conn.commit()
-
-    logger.info(f"Set rsi_over to 2 for RSI between 25 and 75")
-
-    result = await conn.execute(
+    result = await session.execute(
         text(
             f"SELECT time, rsi_14, rsi_over FROM btc_preprocessed WHERE time BETWEEN '{first_time}' AND '{last_time}'"
         )
@@ -1390,64 +988,8 @@ async def update_rsi_state_and_data(
         f"Completed updating RSI state and data between {first_time} and {last_time}"
     )
 
-    # # rsi가 25와 75 사이인 경우 rsi_over를 2로 설정
-    # update_query = f"""
-    # UPDATE btc_preprocessed
-    # SET rsi_over = 2
-    # WHERE time BETWEEN '{first_time}' AND '{last_time}'
-    # AND rsi_14 > 25 AND rsi_14 < 75
-    # """
-    # await conn.execute(text(update_query))
-    # await conn.commit()
 
-    # logger.info(f"Set rsi_over to 2 for RSI between 25 and 75")
-
-    # # 최대값 기준으로 rsi_over 업데이트 (rsi >= 75)
-    # update_query = f"""
-    # WITH max_time_75 AS (
-    #     SELECT max_rsi_time
-    #     FROM rsi_75_state
-    #     ORDER BY id DESC LIMIT 1
-    # )
-    # UPDATE btc_preprocessed
-    # SET rsi_over = CASE
-    #                 WHEN time <= (SELECT max_rsi_time FROM max_time_75) THEN 1
-    #                 WHEN time > (SELECT max_rsi_time FROM max_time_75) THEN 0
-    #                 ELSE rsi_over
-    #               END
-    # WHERE time BETWEEN '{first_time}' AND '{last_time}'
-    # AND rsi_14 >= 75
-    # """
-    # await conn.execute(text(update_query))
-    # await conn.commit()
-
-    # logger.info(f"Updated btc_preprocessed rsi_over based on max_rsi_time_75")
-
-    # # 최저값 기준으로 rsi_over 업데이트 (rsi <= 25)
-    # update_query = f"""
-    # WITH min_time_25 AS (
-    #     SELECT min_rsi_time
-    #     FROM rsi_25_state
-    #     ORDER BY id DESC LIMIT 1
-    # )
-    # UPDATE btc_preprocessed
-    # SET rsi_over = CASE
-    #                 WHEN time <= (SELECT min_rsi_time FROM min_time_25) THEN 0
-    #                 WHEN time > (SELECT min_rsi_time FROM min_time_25) THEN 1
-    #                 ELSE rsi_over
-    #               END
-    # WHERE time BETWEEN '{first_time}' AND '{last_time}'
-    # AND rsi_14 <= 25
-    # """
-    # await conn.execute(text(update_query))
-    # await conn.commit()
-
-    # logger.info(f"Updated btc_preprocessed rsi_over based on min_rsi_time_25")
-
-    # logger.info(f"Revised rsi_over values based on the latest min and max RSI times")
-
-
-async def update_labels(conn: AsyncSession, first_time: str, last_time: str) -> None:
+async def update_labels(session: AsyncSession, first_time: str, last_time: str) -> None:
     """
     close 값의 전, 후 비교를 통해 상승:1, 하락:0 으로 라벨링하는 함수
 
@@ -1455,7 +997,7 @@ async def update_labels(conn: AsyncSession, first_time: str, last_time: str) -> 
     이것을 현재 close 값이랑 비교해서 1, 0 으로 라벨링
     """
     logger.info("Updating labels 1 or 0 for all entries in btc_preprocessed")
-    await conn.execute(
+    await session.execute(
         text(
             f"""
             WITH CTE AS (
@@ -1475,7 +1017,7 @@ async def update_labels(conn: AsyncSession, first_time: str, last_time: str) -> 
             """
         )
     )
-    await conn.commit()
+    await session.commit()
     logger.info("Labels updated successfully for all entries")
 
 
@@ -1625,10 +1167,10 @@ async def preprocess_data(context: dict) -> None:
             # 비동기 코드에서 동기 메소드를 호출할 수 있게 해줌. 테이블이 존재하지 않는 경우에만 테이블을 생성시킨다.
             await conn.run_sync(Base.metadata.create_all)
             await conn.commit()
-            logger.info("Creating btc_preprocessed table if not exists")
+            logger.info("Creating table if not exists")
 
             async with AsyncScopedSession() as session:
-                # await insert_null_data(session)
+                # await insert_null_data(session) : 테스트용
 
                 # null 값이 없는 raw_data 가져오기
                 all_data = await load_all_data(session)
@@ -1647,6 +1189,7 @@ async def preprocess_data(context: dict) -> None:
                 await insert_data(
                     session, conn, initial_insert, past_new_time, new_time
                 )
+
                 # 최초삽입시에는 month_past_time 1년1개월 전으로 설정. 그 이후에는 적재 전 db의 최신시간 에서 1달전으로 설정(30일 이동평균선의 계산을 위해)
                 # minutes + 5 를 하는 이유는 작업 직전 db의 최신시간 이후부터 작업해야하기 때문(이 부분부터 포함해서 current_time_dt 까지 조회하기위해)
                 if initial_insert:
@@ -1661,16 +1204,30 @@ async def preprocess_data(context: dict) -> None:
                     ).isoformat()
 
                 # 이동평균선, 지수이동평균선, RSI, label feature 추가
-                await add_moving_average(conn, month_past_time, current_time_dt)
+                await add_moving_average(session, month_past_time, current_time_dt)
                 # await add_ema(conn, past_time, current_time_dt)
-                await add_rsi(conn, month_past_time, current_time_dt)
+                await add_rsi(session, month_past_time, current_time_dt)
+
+                # rsi_state 테이블들 시퀀스 설정
+                await session.execute(
+                    text(
+                        "ALTER TABLE rsi_75_state ALTER COLUMN id SET DEFAULT nextval('rsi_75_state_id_seq')"
+                    )
+                )
+                await session.execute(
+                    text(
+                        "ALTER TABLE rsi_25_state ALTER COLUMN id SET DEFAULT nextval('rsi_25_state_id_seq')"
+                    )
+                )
+                await session.commit()
+
                 if initial_insert:
-                    await add_rsi_over(conn, month_past_time, current_time_dt)
+                    await add_rsi_over(session, month_past_time, current_time_dt)
                 else:
                     await update_rsi_state_and_data(
-                        conn, past_new_time, current_time_dt
+                        session, past_new_time, current_time_dt
                     )
-                await update_labels(conn, month_past_time, current_time_dt)
+                await update_labels(session, month_past_time, current_time_dt)
 
                 # 1년이 지난 데이터 삭제
                 await delete_old_data(session)
@@ -1688,12 +1245,6 @@ async def preprocess_data(context: dict) -> None:
                 # else:
                 #     await standard_scale_data(session, past_new_time, current_time_dt)
 
-                # 삽입된 데이터를 시간순으로 정렬
-                await session.execute(
-                    select(BtcPreprocessed).order_by(BtcPreprocessed.time)
-                )
-                session.commit()
-                logger.info("Sorting btc_preprocessed table by time")
                 count_final = await session.scalar(
                     select(func.count()).select_from(BtcPreprocessed)
                 )
