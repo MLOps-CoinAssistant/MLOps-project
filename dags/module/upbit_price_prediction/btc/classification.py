@@ -101,7 +101,7 @@ def train_catboost_model_fn(**context: dict) -> None:
             ),  # 랜덤화 강도 조절
         }
 
-        model = CatBoostClassifier(**params, logging_level="Info")
+        model = CatBoostClassifier(**params, logging_level="Silent")
         model.fit(train_pool, eval_set=valid_pool, early_stopping_rounds=50)
         preds = model.predict(valid_pool)
 
