@@ -152,20 +152,6 @@ def train_catboost_model_fn(**context: dict) -> None:
     logger.info(f"F1 Score: {f1}")
     logger.info(f"Classification Report:\n{report}")
 
-    # Permutation Importance 계산
-    perm_importance = permutation_importance(
-        model, X_valid, y_valid, n_repeats=10, random_state=42
-    )
-    perm_importance_df = pd.DataFrame(
-        {
-            "feature": X_valid.columns,
-            "importance_mean": perm_importance.importances_mean,
-            "importance_std": perm_importance.importances_std,
-        }
-    ).sort_values(by="importance_mean", ascending=False)
-
-    logger.info(f"Permutation Importance:\n{perm_importance_df}")
-
     metrics = {
         "accuracy": accuracy,
         "f1_score": f1,
@@ -272,3 +258,38 @@ def transition_model_stage(**context: dict) -> None:
     e = time.time()
     es = e - s
     logger.info(f"Total working time : {es:.4f} sec")
+
+
+# Permutation Importance 계산
+def get_importance(**context):
+    # TODO: DB에 XAI 결과를 저장할 테이블이 있는지 검사하고, 없다면 새로 만들어서 저장하는 로직 추가
+    ti = context["ti"]
+    model_uri = ti.xcom_pull(key="model_uri")
+    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
+
+    engine = create_async_engine(
+        db_uri.replace("postgresql", "postgresql+asyncpg"), future=True
+    )
+
+    df = asyncio.run(load_data(engine))
+    X = df.drop(columns=["label", "time"])
+    y = df["label"]
+
+    split_index = int(len(df) * 0.9)
+    X_valid = X[split_index:]
+    y_valid = y[split_index:]
+
+    model = mlflow.catboost.load_model(model_uri)
+
+    perm_importance = permutation_importance(
+        model, X_valid, y_valid, n_repeats=10, random_state=42
+    )
+    perm_importance_df = pd.DataFrame(
+        {
+            "feature": X_valid.columns,
+            "importance_mean": perm_importance.importances_mean,
+            "importance_std": perm_importance.importances_std,
+        }
+    ).sort_values(by="importance_mean", ascending=False)
+
+    logger.info(f"Permutation Importance:\n{perm_importance_df}")
