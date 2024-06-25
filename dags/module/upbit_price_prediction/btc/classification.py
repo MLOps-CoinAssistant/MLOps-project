@@ -18,6 +18,7 @@ import mlflow
 import uvloop
 import time
 import numpy as np
+from sklearn.inspection import permutation_importance
 
 
 # uvloop를 기본 이벤트 루프로 설정
@@ -150,6 +151,20 @@ def train_catboost_model_fn(**context: dict) -> None:
     logger.info(f"Validation accuracy: {accuracy}")
     logger.info(f"F1 Score: {f1}")
     logger.info(f"Classification Report:\n{report}")
+
+    # Permutation Importance 계산
+    perm_importance = permutation_importance(
+        model, X_valid, y_valid, n_repeats=10, random_state=42
+    )
+    perm_importance_df = pd.DataFrame(
+        {
+            "feature": X_valid.columns,
+            "importance_mean": perm_importance.importances_mean,
+            "importance_std": perm_importance.importances_std,
+        }
+    ).sort_values(by="importance_mean", ascending=False)
+
+    logger.info(f"Permutation Importance:\n{perm_importance_df}")
 
     metrics = {
         "accuracy": accuracy,
