@@ -18,6 +18,7 @@ from dags.module.upbit_price_prediction.btc.classification import (
     train_catboost_model_fn,
     create_model_version,
     transition_model_stage,
+    get_importance,
 )
 
 
@@ -64,6 +65,12 @@ def btc_price_prediction_pipeline():
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
+    get_importance_task = PythonOperator(
+        task_id="get_importance_fn",
+        python_callable=get_importance,
+        trigger_rule=TriggerRule.ALL_DONE,
+    )
+
     create_model_task: PythonOperator = PythonOperator(
         task_id="create_model_task_fn",
         python_callable=create_model_version,
@@ -89,7 +96,7 @@ def btc_price_prediction_pipeline():
         >> save_data_task
         >> preprocess_task
         >> train_model_task
-        >> create_model_task
+        >> [create_model_task, get_importance_task]
         >> transition_model_task
         >> end_task
     )
@@ -102,6 +109,7 @@ def btc_price_prediction_pipeline():
         preprocess_task,
         train_model_task,
         create_model_task,
+        get_importance_task,
         transition_model_task,
         end_task,
     ] >> failure_email

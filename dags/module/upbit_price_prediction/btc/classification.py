@@ -1,5 +1,4 @@
 from dags.module.upbit_price_prediction.btc.create_table import BtcPreprocessed
-
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from catboost import CatBoostClassifier, Pool
 from sklearn.metrics import accuracy_score, classification_report, f1_score
@@ -18,7 +17,9 @@ import mlflow
 import uvloop
 import time
 import numpy as np
-
+from sklearn.inspection import permutation_importance
+from pytz import timezone
+from sqlalchemy import text
 
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -257,3 +258,74 @@ def transition_model_stage(**context: dict) -> None:
     e = time.time()
     es = e - s
     logger.info(f"Total working time : {es:.4f} sec")
+
+
+# Permutation Importance 계산
+async def get_importance_async(**context):
+    ti = context["ti"]
+    model_uri = ti.xcom_pull(key="model_uri")
+    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
+    experiment_name = ti.xcom_pull(key="model_name")
+    run_id = ti.xcom_pull(key="run_id")
+
+    engine = create_async_engine(
+        db_uri.replace("postgresql", "postgresql+asyncpg"), future=True
+    )
+
+    df = await load_data(engine)
+    X = df.drop(columns=["label", "time"])
+    y = df["label"]
+
+    split_index = int(len(df) * 0.9)
+    X_valid = X[split_index:]
+    y_valid = y[split_index:]
+
+    model = mlflow.catboost.load_model(model_uri)
+
+    perm_importance = permutation_importance(
+        model, X_valid, y_valid, n_repeats=10, random_state=42
+    )
+    perm_importance_df = pd.DataFrame(
+        {
+            "feature": X_valid.columns,
+            "importance_mean": perm_importance.importances_mean,
+            "importance_std": perm_importance.importances_std,
+        }
+    ).sort_values(by="importance_mean", ascending=False)
+
+    perm_importance_df["experiment_name"] = experiment_name
+    perm_importance_df["run_id"] = run_id
+    perm_importance_df["time"] = datetime.now(tz=timezone("Asia/Seoul"))
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                f"""
+            CREATE TABLE IF NOT EXISTS btc_importance (
+                run_id VARCHAR PRIMARY KEY,
+                experiment_name VARCHAR,
+                time TIMESTAMP,
+                {", ".join([f"{col} FLOAT" for col in perm_importance_df['feature']])}
+            )
+        """
+            )
+        )
+
+        insert_query = text(
+            f"""
+            INSERT INTO btc_importance (run_id, experiment_name, time, {", ".join(perm_importance_df['feature'])})
+            VALUES ('{run_id}', '{experiment_name}', '{datetime.now(tz=timezone('Asia/Seoul'))}', {", ".join(map(str, perm_importance_df['importance_mean']))})
+        """
+        )
+        await conn.execute(insert_query)
+
+    logger.info(f"Permutation Importance saved to database:\n{perm_importance_df}")
+
+
+def get_importance(**context):
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        task = loop.create_task(get_importance_async(**context))
+        loop.run_until_complete(task)
+    else:
+        loop.run_until_complete(get_importance_async(**context))
