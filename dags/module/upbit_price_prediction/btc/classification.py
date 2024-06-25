@@ -20,6 +20,10 @@ import numpy as np
 from sklearn.inspection import permutation_importance
 from pytz import timezone
 from sqlalchemy import text
+from info.minio_config import MinioConfig
+import boto3
+from urllib.parse import urlparse
+
 
 # uvloop를 기본 이벤트 루프로 설정
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -252,9 +256,41 @@ def transition_model_stage(**context: dict) -> None:
                 archive_existing_versions=True,
             )
             production_model = current_model
+            ti.xcom_push(key="production_version", value=production_model.version)
+            logger.info(
+                f"Production model deployed: version {production_model.version}"
+            )
+        else:
+            # 실험 이력은 관리되도록 해야 한다.
+            # Run 정보 가져오기
+            run_info = client.get_run(current_model.run_id)
+            # 아티팩트 경로 추출
+            artifact_uri = run_info.info.artifact_uri
+            # MinIO에서 아티팩트 삭제
 
-    ti.xcom_push(key="production_version", value=production_model.version)
-    logger.info(f"Production model deployed: version {production_model.version}")
+            parsed_uri = urlparse(artifact_uri)
+            bucket_name = parsed_uri.netloc
+            artifact_path = parsed_uri.path.lstrip("/")
+
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=MinioConfig.MINIO_SERVER_URL.value,  # MinIO 엔드포인트
+                aws_access_key_id=MinioConfig.MINIO_ACCESS_KEY.value,
+                aws_secret_access_key=MinioConfig.MINIO_SECRET_KEY.value,
+            )
+
+            # 아티팩트 목록 가져오기
+            objects_to_delete = s3.list_objects_v2(
+                Bucket=bucket_name, Prefix=artifact_path
+            )
+            delete_keys = [
+                {"Key": obj["Key"]} for obj in objects_to_delete.get("Contents", [])
+            ]
+
+            if delete_keys:
+                s3.delete_objects(Bucket=bucket_name, Delete={"Objects": delete_keys})
+                logger.info(f"Artifacts deleted from MinIO: {artifact_path}")
+
     e = time.time()
     es = e - s
     logger.info(f"Total working time : {es:.4f} sec")
