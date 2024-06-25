@@ -1,6 +1,7 @@
 ERROR_400_BTC_RAW_DATA_NOT_FOUND = "40000"
 ERROR_400_BTC_PREPROCESSED_DATA_NOT_FOUND = "40001"
 ERROR_400_PREDICT_MODEL_NOT_FOUND = "40002"
+ERROR_400_BTC_FEATURE_IMPORTACES_NOT_FOUND = "40003"
 ERROR_400_OUT_OF_RANGE = "40003"
 ERROR_401_INVALID_API_KEY = "40100"
 
@@ -23,6 +24,14 @@ class BtcPreprocessedNotFoundException(BaseAPIException):
         super().__init__(
             code=ERROR_400_BTC_PREPROCESSED_DATA_NOT_FOUND,
             message="BtcPreprocessed not found.",
+        )
+
+
+class BtcFeatureImportancesNotFoundException(BaseAPIException):
+    def __init__(self):
+        super().__init__(
+            code=ERROR_400_BTC_FEATURE_IMPORTACES_NOT_FOUND,
+            message="BtcFeatureImportances is not found.",
         )
 
 
