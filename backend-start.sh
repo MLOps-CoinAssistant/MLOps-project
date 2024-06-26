@@ -35,4 +35,8 @@ export MLFLOW_S3_ENDPOINT_URL=${MLFLOW_S3_ENDPOINT_URL}:${MLFLOW_S3_ENDPOINT_MAI
 export MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI_LOCAL}:${MLFLOW_TRACKING_PORT}
 
 # FastAPI 서버 시작
-poetry run uvicorn app.main:app --reload
+# poetry run uvicorn app.main:app --reload
+
+docker build -f ./fastapi/Dockerfile -t asia-northeast3-docker.pkg.dev/chromatic-force-426910-d4/btc-price-prediction-model/latest .
+docker push asia-northeast3-docker.pkg.dev/chromatic-force-426910-d4/btc-price-prediction-model/latest
+docker run --env-file ../.env -p 8000:8000 asia-northeast3-docker.pkg.dev/chromatic-force-426910-d4/btc-price-prediction-model/latest

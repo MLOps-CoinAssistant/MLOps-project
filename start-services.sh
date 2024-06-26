@@ -1,6 +1,11 @@
 #!/bin/bash
 # sudo chmod 764 start-services.sh
 
+# 스크립트 실행 중 에러 발생 시 중지
+set -e
+# 에러 발생 시 메시지 출력
+trap 'echo "An error occurred. Exiting..."; exit 1;' ERR
+
 # 환경 변수 로드
 set -a
 source .env
