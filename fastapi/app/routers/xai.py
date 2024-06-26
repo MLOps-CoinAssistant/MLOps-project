@@ -19,7 +19,7 @@ router = APIRouter()
 @inject
 async def get_importances(
     skip: int = Query(0, ge=0, description="Start point"),
-    limit: int = Query(0, ge=0, description="End point"),
+    limit: int = Query(10, ge=1, description="End point"),
     xai_service: XaiService = Depends(Provide[Container.xai_service]),
 ) -> HttpResponse:
 
