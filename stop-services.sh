@@ -20,7 +20,7 @@ if [ -n "$uvicorn_process" ]; then
   kill -9 $uvicorn_process
 fi
 
-uvicorn_docker_process=$(ps -a | grep entrypoint | awk '{print $1}')
+uvicorn_docker_process=$(docker ps -a | grep entrypoint | awk '{print $1}')
 if [ -n "$uvicorn_docker_process" ]; then
   docker stop $uvicorn_docker_process && docker rm $uvicorn_docker_process
   # kill -9 $uvicorn_docker_process

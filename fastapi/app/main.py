@@ -39,3 +39,8 @@ app = create_app()
 @app.get("/")
 def read_root():
     return {"message": "Hello World"}
+
+
+@app.get("/healthcheck")
+async def healthcheck():
+    return {"status": "ok"}
