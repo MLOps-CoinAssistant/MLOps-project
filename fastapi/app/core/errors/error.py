@@ -4,6 +4,10 @@ ERROR_400_PREDICT_MODEL_NOT_FOUND = "40002"
 ERROR_400_BTC_FEATURE_IMPORTACES_NOT_FOUND = "40003"
 ERROR_400_OUT_OF_RANGE = "40003"
 ERROR_401_INVALID_API_KEY = "40100"
+ERROR_404_MINIO_OBJECT_NOT_FOUND = "40400"
+ERROR_503_UPBIT_SERVICE_UNAVAILABLE = "50300"
+ERROR_503_MINIO_SERVICE_UNAVAILABLE = "50301"
+ERROR_503_MLFLOW_SERVICE_UNAVAILABLE = "50302"
 
 
 class BaseAPIException(Exception):
@@ -50,6 +54,14 @@ class PredictModelNotFoundException(BaseAPIException):
         )
 
 
+class UpbitServiceUnavailableException(BaseAPIException):
+    def __init__(self):
+        super().__init__(
+            code=ERROR_503_UPBIT_SERVICE_UNAVAILABLE,
+            message="Upbit service is unavailable.",
+        )
+
+
 class BaseAuthException(Exception):
     def __init__(self, code: str, message: str):
         self.code = code
@@ -59,3 +71,26 @@ class BaseAuthException(Exception):
 class InvalidAPIKey(BaseAuthException):
     def __init__(self):
         super().__init__(code=ERROR_401_INVALID_API_KEY, message="Invalid API Key")
+
+
+class MinioServiceUnavailableException(BaseAPIException):
+    def __init__(self):
+        super().__init__(
+            code=ERROR_503_MINIO_SERVICE_UNAVAILABLE,
+            message="MinIO service is unavailable.",
+        )
+
+
+class MLflowServiceUnavailableException(BaseAPIException):
+    def __init__(self):
+        super().__init__(
+            code=ERROR_503_MLFLOW_SERVICE_UNAVAILABLE,
+            message="MLflow service is unavailable.",
+        )
+
+
+class MinioObjectNotFoundException(BaseAPIException):
+    def __init__(self):
+        super().__init__(
+            code=ERROR_404_MINIO_OBJECT_NOT_FOUND, message="MinIO object not found."
+        )

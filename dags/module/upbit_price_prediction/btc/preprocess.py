@@ -854,6 +854,16 @@ async def update_rsi_state_and_data(
             if max_rsi_75 == 0 or rsi_14 > max_rsi_75:
                 max_rsi_75 = rsi_14
                 max_rsi_time_75 = time
+
+            update_query = f"""
+            UPDATE btc_preprocessed
+            SET rsi_over = 1
+            WHERE time BETWEEN '{range_start_75}' AND '{time}'
+            AND rsi_14 >= 75
+            """
+            await session.execute(text(update_query))
+            await session.commit()
+
         elif rsi_14 < 75 and range_start_75 != "1970-01-01 00:00:00":
             # 구간을 벗어났으므로 현재 시간을 종료시간으로 업데이트
             range_end_75 = time
@@ -900,6 +910,16 @@ async def update_rsi_state_and_data(
             if min_rsi_25 == 100 or rsi_14 < min_rsi_25:
                 min_rsi_25 = rsi_14
                 min_rsi_time_25 = time
+            # 업데이트 시점까지 rsi_over 값을 미리 설정
+            update_query = f"""
+            UPDATE btc_preprocessed
+            SET rsi_over = 0
+            WHERE time BETWEEN '{range_start_25}' AND '{time}'
+            AND rsi_14 <= 25
+            """
+            await session.execute(text(update_query))
+            await session.commit()
+
         elif rsi_14 > 25 and range_start_25 != "1970-01-01 00:00:00":
             range_end_25 = time
 
