@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock
 
 from httpx import AsyncClient
+from aiohttp import ClientSession
 
 from app.main import create_app
 from app.core.container import Container
@@ -48,3 +49,8 @@ def predict_service_mock(predict_repository_mock):
 @pytest.fixture
 def xai_service_mock(xai_repository_mock):
     return XaiService(xai_repository=xai_repository_mock)
+
+
+@pytest.fixture
+def mock_client_session():
+    return AsyncMock(spec=ClientSession)
