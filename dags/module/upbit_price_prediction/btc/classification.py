@@ -225,7 +225,7 @@ def transition_model_stage(**context: dict) -> None:
     ti = context["ti"]
     model_name: str = ti.xcom_pull(key="model_name")
     version = ti.xcom_pull(key="model_version")
-    eval_metric = ti.xcom_pull(key="eval_metric")
+    eval_metric = ti.xcom_pull(key="eval_metric")  # eval_metric은 f1 score로 되어 있다.
     client = MlflowClient()
 
     current_model = client.get_model_version(model_name, version)
@@ -237,13 +237,16 @@ def transition_model_stage(**context: dict) -> None:
         if mv.current_stage == "Production":
             production_model = mv
 
+    current_metric = client.get_run(current_model.run_id).data.metrics[eval_metric]
+
     if production_model is None:
         client.transition_model_version_stage(
             current_model.name, current_model.version, "Production"
         )
         production_model = current_model
+        ti.xcom_push(key="production_version", value=production_model.version)
+        logger.info(f"Production model deployed: version {production_model.version}")
     else:
-        current_metric = client.get_run(current_model.run_id).data.metrics[eval_metric]
         production_metric = client.get_run(production_model.run_id).data.metrics[
             eval_metric
         ]
@@ -260,8 +263,15 @@ def transition_model_stage(**context: dict) -> None:
             logger.info(
                 f"Production model deployed: version {production_model.version}"
             )
+        elif current_metric >= 0.610:
+            client.transition_model_version_stage(
+                current_model.name,
+                current_model.version,
+                "Staging",
+                archive_existing_versions=True,
+            )
+            logger.info(f"Candidate model registered: version {current_model.version}")
         else:
-            # 실험 이력은 관리되도록 해야 한다.
             # Run 정보 가져오기
             run_info = client.get_run(current_model.run_id)
             # 아티팩트 경로 추출
