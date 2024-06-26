@@ -1,3 +1,3 @@
-from . import connections, api, coins
+from . import connections, api, coins, minio_config
 
-all = ["Connections", "api", "coins"]
+all = ["Connections", "api", "coins", "MinioConfig"]
