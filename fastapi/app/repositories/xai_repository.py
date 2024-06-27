@@ -59,4 +59,4 @@ class XaiRepository:
                 raise
             except Exception as e:
                 logger.error(e)
-                raise
+                raise error.BtcFeatureImportancesNotFoundException from e

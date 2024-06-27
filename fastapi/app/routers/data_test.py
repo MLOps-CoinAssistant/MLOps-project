@@ -4,9 +4,7 @@ from app.services.data_service import DataService
 from app.core.container import Container
 from app.core.logger import logger
 from app.core.redis import RedisCacheDecorator
-from app.core.errors import error
-from app.models.db.model import BtcOhlcv, BtcPreprocessed
-from sqlalchemy import select, func
+
 from app.models.schemas.common import BaseResponse, HttpResponse, ErrorResponse
 from app.models.schemas.data_test import BtcOhlcvResp, BtcPreprocessedResp
 from typing import List

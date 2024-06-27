@@ -28,16 +28,18 @@ class DataRepository:
                 )
                 logger.debug(f"Total count of BtcOhlcv: {total_count}")
 
-                if skip >= total_count:
+                if skip < 0 or limit <= 0 or skip >= total_count:
                     raise error.OutOfRangeException()
 
                 if skip + limit > total_count:
-                    limit = total_count - skip
+                    limit = max(total_count - skip, 0)
 
                 logger.debug(
                     f"Executing select query with skip={skip} and limit={limit}"
                 )
-                stmt = select(BtcOhlcv).offset(skip).limit(limit)
+                stmt = (
+                    select(BtcOhlcv).order_by(BtcOhlcv.time).offset(skip).limit(limit)
+                )
                 result: List[BtcOhlcv] = (await session.execute(stmt)).scalars().all()
                 logger.debug(f"Query result: {result}")
 

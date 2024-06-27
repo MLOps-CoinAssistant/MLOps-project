@@ -48,15 +48,17 @@ def load_model_and_metadata(model_uri: str) -> Tuple[mlflow.pyfunc.PyFuncModel, 
         run_id = model.metadata.run_id
         run = client.get_run(run_id)
         average_proba = run.data.metrics.get("average_proba")
+        if average_proba is None:
+            raise error.PredictModelNotFoundException()  # 명시적으로 예외 발생
         return average_proba
 
     except mlflow.exceptions.MlflowException as e:
         logger.error(e)
-        raise error.PredictModelNotFoundException()
+        raise error.PredictModelNotFoundException() from e
 
     except Exception as e:
         logger.error(e)
-        raise error.MLflowServiceUnavailableException()
+        raise error.MLflowServiceUnavailableException() from e
 
 
 def get_production_model_uri() -> str:
