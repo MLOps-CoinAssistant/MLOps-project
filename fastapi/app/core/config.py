@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     UPBIT_ACCESS_KEY: str
     UPBIT_SECRET_KEY: str
     ENV: str
+    REDIS_HOST: str
+    REDIS_PORT: int
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(__file__), "..", "..", "fastapi", ".env"),
@@ -70,11 +72,19 @@ class Config(BaseSettings):
     UPBIT_ACCESS_KEY: str = settings.UPBIT_ACCESS_KEY
     UPBIT_SECRET_KEY: str = settings.UPBIT_SECRET_KEY
     MINIO_SERVER_URL: str = settings.MLFLOW_S3_ENDPOINT_URL
+    MLFLOW_S3_ENDPOINT_MAIN_PORT: str = settings.MLFLOW_S3_ENDPOINT_MAIN_PORT
     MINIO_ACCESS_KEY: str = settings.AWS_ACCESS_KEY_ID
     MINIO_SECRET_KEY: str = settings.AWS_SECRET_ACCESS_KEY
 
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
+    REDIS_HOST: str = settings.REDIS_HOST
+    REDIS_PORT: int = settings.REDIS_PORT
+
+    DB_URL: str = (
+        f"{settings.DB_TYPE}+asyncpg://{settings.DB_USER}:{settings.DB_PW}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DEFAULT_NAME}"
+    )
+
+    logging.info(f"Database URL: {DB_URL}")
+    logging.info(f"REDIS_HOST: {REDIS_HOST}")
 
     @property
     def fastapi_kwargs(self) -> Dict[str, Any]:

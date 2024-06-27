@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette_context.middleware import ContextMiddleware
+import logging
 
 from app.core.config import config
 from app.core.lifespan import lifespan
@@ -12,7 +13,10 @@ from app.routers import router
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(lifesapn=lifespan, **config.fastapi_kwargs)
+    app = FastAPI(
+        lifespan=lifespan,
+        **config.fastapi_kwargs,
+    )
 
     container = Container()
     container.config.from_dict(config.model_dump())
@@ -29,6 +33,8 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(SQLAlchemyMiddleware)
     app.add_middleware(ContextMiddleware)
+
+    logging.info(f"App created with config: {config}")
 
     return app
 
