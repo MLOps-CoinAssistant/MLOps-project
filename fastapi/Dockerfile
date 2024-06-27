@@ -9,15 +9,10 @@ COPY ./pyproject.toml ./pyproject.toml
 
 RUN poetry install --no-root
 
-# RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
-# RUN pip install --no-cache-dir --upgrade -r ./requirements.txt
-
 COPY ./app /app
 COPY ./entrypoint.sh /entrypoint.sh
-# COPY .env /.env
+RUN chmod +x /entrypoint.sh
 
-RUN chmod +x ./entrypoint.sh
+ENV UVICORN_PORT=8000
 
-ENTRYPOINT ["bash", "./entrypoint.sh"]
-
-# CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["bash", "/entrypoint.sh"]

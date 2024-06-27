@@ -37,8 +37,8 @@ if ! docker ps -a | grep -q ml-ops-proj; then
 fi
 
 # backend 서비스가 이미 실행 중인지 확인
-if ! ps -a | grep -q backend && ! ps -a | grep -q uvicorn; then
-    ./backend-start.sh &
+if ! ps -a | grep -q fastapi && ! ps -a | grep -q uvicorn; then
+    ./run-fastapi-local.sh &
 fi
 
 # Docker 상태 확인

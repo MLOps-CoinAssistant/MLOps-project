@@ -18,10 +18,10 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str
     MLFLOW_TRACKING_URI: str
     MLFLOW_TRACKING_URI_LOCAL: str
-    MLFLOW_TRACKING_PORT: int
+    MLFLOW_TRACKING_PORT: str
     MLFLOW_S3_ENDPOINT_URL: str
-    MLFLOW_S3_ENDPOINT_MAIN_PORT: int
-    MLFLOW_S3_ENDPOINT_SUB_PORT: int
+    MLFLOW_S3_ENDPOINT_MAIN_PORT: str
+    MLFLOW_S3_ENDPOINT_SUB_PORT: str
     MINIO_ROOT_USER: str
     MINIO_ROOT_PASSWORD: str
     MLFLOW_DB_HOST: str
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     DB_USER: str
     DB_PW: str
     DB_HOST: str
-    DB_PORT: int
+    DB_PORT: str
     DB_DEFAULT_NAME: str
     ARTIFACT_ROOT: str
     MLFLOW_SERVER_HOST: str
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     AIRFLOW_SMTP_USER: str
     SMTP_MAIL_ADDRESS: str
     AIRFLOW_SMTP_PASSWORD: str
-    UVICORN_PORT: int
+    UVICORN_PORT: str
     UPBIT_ACCESS_KEY: str
     UPBIT_SECRET_KEY: str
     ENV: str
