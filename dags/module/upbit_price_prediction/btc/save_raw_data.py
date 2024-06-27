@@ -443,8 +443,8 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
 def save_raw_data_from_API_fn(**context) -> None:
     start_time = time.time()
     ti = context["ti"]
-    table_created = ti.xcom_pull(key="table_created", task_ids="create_table_fn")
-    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
+    table_created = ti.xcom_pull(key="table_created", task_ids="create_table")
+    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table")
 
     logger.info(f"table_created: {table_created}, db_uri: {db_uri}")
 

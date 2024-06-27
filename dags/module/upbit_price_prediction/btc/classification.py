@@ -1,9 +1,8 @@
-from dags.module.upbit_price_prediction.btc.create_table import BtcPreprocessed
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from catboost import CatBoostClassifier, Pool
 from sklearn.metrics import accuracy_score, classification_report, f1_score
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy import select
+
 from optuna.storages import RDBStorage
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
@@ -60,7 +59,11 @@ def train_catboost_model_fn(**context: dict) -> None:
     run_name = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     ti = context["ti"]
-    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
+    hook: PostgresHook = PostgresHook(
+        postgres_conn_id=Connections.POSTGRES_DEFAULT.value
+    )
+    db_uri = hook.get_uri()
+    ti.xcom_push(key="db_uri", value=db_uri)
     # 데이터 로드
     engine = create_async_engine(
         db_uri.replace("postgresql", "postgresql+asyncpg"), future=True
@@ -310,7 +313,7 @@ def transition_model_stage(**context: dict) -> None:
 async def get_importance_async(**context):
     ti = context["ti"]
     model_uri = ti.xcom_pull(key="model_uri")
-    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
+    db_uri = ti.xcom_pull(key="db_uri", task_ids="train_catboost_model")
     experiment_name = ti.xcom_pull(key="model_name")
     run_id = ti.xcom_pull(key="run_id")
 

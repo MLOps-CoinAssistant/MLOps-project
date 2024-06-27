@@ -78,6 +78,7 @@ def create_table_fn(
     """
     데이터베이스에 필요한 테이블이 존재하지 않으면 생성
     """
+    print(f"db_uri:{hook.get_uri()}")
     s = time.time()
     engine = create_engine(hook.get_uri())
     inspector = inspect(engine)
