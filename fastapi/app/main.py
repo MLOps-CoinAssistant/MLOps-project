@@ -40,9 +40,7 @@ app = create_app()
 
 @app.get("/")
 def read_root():
-    return {
-        "message": f"It's BTC price prediction backend server. {config.MINIO_SERVER_URL}"
-    }
+    return {"message": f"It's BTC price prediction backend server."}
 
 
 @app.get("/healthcheck")
