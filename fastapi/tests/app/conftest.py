@@ -28,7 +28,7 @@ def data_repository_mock():
 
 @pytest.fixture
 def predict_repository_mock():
-    return AsyncMock(spec=PredictRepository)
+    return AsyncMock(spec=PredictRepository, data_repository=data_repository_mock)
 
 
 @pytest.fixture

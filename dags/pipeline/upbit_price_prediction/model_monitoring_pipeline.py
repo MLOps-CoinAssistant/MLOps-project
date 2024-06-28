@@ -3,7 +3,7 @@ from airflow.decorators import dag
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from dags.module.upbit_price_prediction.btc.delay import delay_start_20
+
 from dags.module.upbit_price_prediction.btc.check_performance import (
     check_model_performance,
     monitoring,
@@ -16,7 +16,7 @@ from airflow.models import Variable
 
 
 @dag(
-    schedule_interval="*/5 * * * *",  # 5분마다 실행
+    schedule_interval="0 * * * *",  # 5분마다 실행
     start_date=datetime(2024, 6, 27, 0, 0),
     catchup=False,
     default_args={
@@ -29,11 +29,6 @@ from airflow.models import Variable
 )
 def model_monitoring_pipeline():
     start_task = EmptyOperator(task_id="start_task")
-
-    delay_task = PythonOperator(
-        task_id="delay_20seconds",
-        python_callable=delay_start_20,
-    )
 
     check_performance_task = PythonOperator(
         task_id="check_model_performance",
@@ -57,7 +52,7 @@ def model_monitoring_pipeline():
     success_email = get_success_email_operator(to_email=email_addr)
     failure_email = get_failure_email_operator(to_email=email_addr)
 
-    start_task >> delay_task >> check_performance_task >> monitoring_task
+    start_task >> check_performance_task >> monitoring_task
     monitoring_task >> [trigger_training, end_task]
     trigger_training >> end_task
     end_task >> success_email

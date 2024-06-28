@@ -17,6 +17,7 @@ from airflow.models import Variable
 
 
 @dag(
+    dag_id="data_pipeline",
     schedule_interval="*/5 * * * *",  # 5분마다 실행
     start_date=datetime(2024, 6, 27, 0, 0),
     catchup=False,

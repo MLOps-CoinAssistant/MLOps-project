@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta
+
+from airflow.models import DagRun
+from airflow.utils.db import provide_session
 from airflow.decorators import dag
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.sensors.external_task import ExternalTaskSensor
-from dags.module.upbit_price_prediction.btc.delay import delay_start_10
+
 from dags.module.upbit_price_prediction.btc.classification import (
     train_catboost_model_fn,
     create_model_version,
@@ -17,10 +20,27 @@ from dags.module.email_tasks import (
 from airflow.models import Variable
 
 
+@provide_session
+def get_closest_execution_date(execution_date, session=None, **kwargs):
+    # 데이터 파이프라인의 가장 최근 실행된 성공한 태스크를 찾습니다.
+    dag_runs = (
+        session.query(DagRun)
+        .filter(DagRun.dag_id == "data_pipeline", DagRun.state == "success")
+        .order_by(DagRun.execution_date.desc())
+        .first()
+    )
+
+    if dag_runs:
+        return dag_runs.execution_date
+    else:
+        return execution_date
+
+
 @dag(
-    schedule_interval="50 * * * *",  # 매일 utc기준 00시에 실행 (똑같이 딜레이10초)
+    dag_id="model_training_pipeline",
+    schedule_interval="0 0 * * *",  # 매일 utc기준 00시에 실행 (똑같이 딜레이10초)
     start_date=datetime(2024, 6, 27, 0, 0),
-    catchup=False,
+    catchup=True,
     default_args={
         "owner": "ChaCoSpoons",
         "retries": 3,
@@ -32,21 +52,18 @@ from airflow.models import Variable
 def model_training_pipeline():
     start_task = EmptyOperator(task_id="start_task")
 
-    delay_task = PythonOperator(
-        task_id="delay_10seconds",
-        python_callable=delay_start_10,
-    )
-    # data_pipeline dag의 현재 상태를 탐지해서 최신기준 end_task가 끝나야 이 태스크가 완료된다. (유예시간 1시간)
+    # data_pipeline dag의 현재 상태를 탐지해서 최신기준 end_task가 끝나야 이 태스크가 완료된다. 30분간시도
     wait_for_data_pipeline = ExternalTaskSensor(
         task_id="wait_for_data_pipeline",
         external_dag_id="data_pipeline",
         external_task_id="end_task",
         allowed_states=["success"],
         failed_states=["failed", "skipped"],
-        mode="reschedule",
-        timeout=3600,
-        poke_interval=60,  # 60초마다 감지
-        execution_date_fn=lambda dt: dt,
+        mode="poke",
+        timeout=1800,
+        poke_interval=30,  # 60초마다 감지
+        execution_date_fn=get_closest_execution_date,
+        # execution_date_fn=get_most_recent_execution_date,
     )
 
     train_model_task = PythonOperator(
@@ -75,7 +92,7 @@ def model_training_pipeline():
     success_email = get_success_email_operator(to_email=email_addr)
     failure_email = get_failure_email_operator(to_email=email_addr)
 
-    start_task >> delay_task >> wait_for_data_pipeline >> train_model_task
+    start_task >> wait_for_data_pipeline >> train_model_task
     (
         train_model_task
         >> [create_model_task, get_importance_task]

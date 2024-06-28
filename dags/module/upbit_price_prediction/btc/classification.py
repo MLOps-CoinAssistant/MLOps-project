@@ -7,7 +7,7 @@ from optuna.storages import RDBStorage
 from mlflow.tracking import MlflowClient
 from mlflow.store.artifact.runs_artifact_repo import RunsArtifactRepository
 from info.connections import Connections
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import logging
 import optuna
@@ -17,7 +17,7 @@ import uvloop
 import time
 import numpy as np
 from sklearn.inspection import permutation_importance
-from pytz import timezone
+import pytz
 from sqlalchemy import text
 from info.minio_config import MinioConfig
 import boto3
@@ -254,7 +254,23 @@ def transition_model_stage(**context: dict) -> None:
             eval_metric
         ]
 
-        if current_metric > production_metric:
+        # 최근 경향을 최대한 반영하기 위해 7일마다 교체하도록 설정 (과거의 모델 성능이 최고점인 상태가 오래 지속될 경우 최근 데이터 경향을 반영못할 가능성때문)
+        update_period_days = 7
+        last_update_timestamp = (
+            production_model.creation_timestamp / 1000
+        )  # 프로덕션 모델의 생성 기준으로 timestamp불러옴. 시간이 밀리초여서 이걸 초로 변환
+        last_update_date = datetime.fromtimestamp(
+            last_update_timestamp, tz=timezone.utc
+        )
+        current_date = datetime.now(timezone.utc)
+        days_since_last_update = (
+            current_date - last_update_date
+        ).days  # 모델생성 기준으로 현재시간과의 차이를 계산
+
+        if (
+            current_metric > production_metric
+            or days_since_last_update >= update_period_days
+        ):
             client.transition_model_version_stage(
                 current_model.name,
                 current_model.version,
@@ -303,6 +319,8 @@ def transition_model_stage(**context: dict) -> None:
             if delete_keys:
                 s3.delete_objects(Bucket=bucket_name, Delete={"Objects": delete_keys})
                 logger.info(f"Artifacts deleted from MinIO: {artifact_path}")
+            else:
+                logger.info("Artifacts not found.")
 
     e = time.time()
     es = e - s
@@ -344,7 +362,7 @@ async def get_importance_async(**context):
 
     perm_importance_df["experiment_name"] = experiment_name
     perm_importance_df["run_id"] = run_id
-    perm_importance_df["time"] = datetime.now(tz=timezone("Asia/Seoul"))
+    perm_importance_df["time"] = datetime.now(tz=pytz.timezone("Asia/Seoul"))
 
     async with engine.begin() as conn:
         await conn.execute(
@@ -363,7 +381,7 @@ async def get_importance_async(**context):
         insert_query = text(
             f"""
             INSERT INTO btc_importance (run_id, experiment_name, time, {", ".join(perm_importance_df['feature'])})
-            VALUES ('{run_id}', '{experiment_name}', '{datetime.now(tz=timezone('Asia/Seoul'))}', {", ".join(map(str, perm_importance_df['importance_mean']))})
+            VALUES ('{run_id}', '{experiment_name}', '{datetime.now(tz=pytz.timezone('Asia/Seoul'))}', {", ".join(map(str, perm_importance_df['importance_mean']))})
         """
         )
         await conn.execute(insert_query)
