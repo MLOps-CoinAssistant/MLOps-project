@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from app.models.schemas.data_test import BtcOhlcvResp, BtcPreprocessedResp
+from app.models.schemas.data import BtcOhlcvResp, BtcPreprocessedResp
 from app.core.db.session import ping_db, close_db
 
 from datetime import datetime

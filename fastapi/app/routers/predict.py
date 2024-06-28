@@ -23,7 +23,9 @@ router = APIRouter()
 async def predict(
     predict_service: PredictService = Depends(Provide[Container.predict_service]),
 ) -> HttpResponse:
-
+    """
+    가장 최근의 학습에서 저장된 모델로 예측한 결과
+    """
     response_data = await predict_service.predict()
     response_content = [data.dict(by_alias=True) for data in response_data]
     return HttpResponse(content=response_content)
@@ -38,7 +40,9 @@ async def predict(
 async def predict_product(
     predict_service: PredictService = Depends(Provide[Container.predict_service]),
 ) -> HttpResponse:
-
+    """
+    현재 프로덕션 서버의 모델로 예측한 결과
+    """
     response_data = await predict_service.predict_product()
     response_content = [data.dict(by_alias=True) for data in response_data]
     return HttpResponse(content=response_content)

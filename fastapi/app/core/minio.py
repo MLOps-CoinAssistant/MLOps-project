@@ -2,6 +2,7 @@ from minio import Minio
 import mlflow
 import mlflow.pyfunc
 from mlflow.tracking import MlflowClient
+from mlflow.exceptions import MlflowException
 from minio.error import S3Error
 from app.core.config import config
 from app.core.errors import error
@@ -33,18 +34,18 @@ def get_model_uri(bucket_name: str, model_path: str) -> str:
         return uri
     except Exception as e:
         logger.error(e)
-        raise error.MinioServiceUnavailableException()
+        raise error.MinioObjectNotFoundException()
 
 
 def load_model_and_metadata(model_uri: str) -> Tuple[mlflow.pyfunc.PyFuncModel, float]:
     """
-    모델 URI에서 ML 모델과 메타데이터를 로드합니다.
+    모델 URI에서 ML 모델과 메타데이터를 로드합니다.(average_proba를 반환)
     """
     try:
         logger.info(f"Loading model from URI: {model_uri}")
 
         model = mlflow.pyfunc.load_model(model_uri)
-        client = mlflow.tracking.MlflowClient()
+        client = MlflowClient()
         run_id = model.metadata.run_id
         run = client.get_run(run_id)
         average_proba = run.data.metrics.get("average_proba")
@@ -52,13 +53,13 @@ def load_model_and_metadata(model_uri: str) -> Tuple[mlflow.pyfunc.PyFuncModel, 
             raise error.PredictModelNotFoundException()  # 명시적으로 예외 발생
         return average_proba
 
-    except mlflow.exceptions.MlflowException as e:
+    except MlflowException as e:
         logger.error(e)
         raise error.PredictModelNotFoundException() from e
 
     except Exception as e:
         logger.error(e)
-        raise error.MLflowServiceUnavailableException() from e
+        raise error.PredictModelNotFoundException() from e
 
 
 def get_production_model_uri() -> str:
@@ -69,6 +70,8 @@ def get_production_model_uri() -> str:
         client = MlflowClient()
         name = f"name='btc_catboost_alpha'"
         results = client.search_model_versions(name)
+        if results is None:
+            raise error.PredictModelNotFoundException()
 
         production_model = None
         for mv in results:
@@ -82,9 +85,17 @@ def get_production_model_uri() -> str:
         model_uri = production_model.source
         return model_uri
 
+    except error.PredictModelNotFoundException as e:
+        logger.error(e)
+        raise
+
+    except MlflowException as e:
+        logger.error(e)
+        raise error.PredictModelNotFoundException()
+
     except Exception as e:
         logger.error(e)
-        raise error.MLflowServiceUnavailableException()
+        raise error.PredictModelNotFoundException()
 
 
 def get_latest_model_path(bucket_name: str) -> str:
@@ -105,8 +116,8 @@ def get_latest_model_path(bucket_name: str) -> str:
 
     except S3Error as e:
         logger.error(e)
-        raise error.MinioServiceUnavailableException()
+        raise error.MinioObjectNotFoundException()
 
     except Exception as e:
         logger.error(e)
-        raise error.MinioServiceUnavailableException()
+        raise error.MinioObjectNotFoundException()

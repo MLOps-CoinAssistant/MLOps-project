@@ -3,7 +3,7 @@ from app.core.redis import RedisCacheDecorator
 from sqlalchemy import select, func
 from app.core.config import config
 from app.models.db.model import BtcOhlcv, BtcPreprocessed
-from app.models.schemas.data_test import BtcOhlcvResp, BtcPreprocessedResp
+from app.models.schemas.data import BtcOhlcvResp, BtcPreprocessedResp
 from app.core.errors import error
 from app.core.logger import logger
 from typing import List, Tuple, Dict
@@ -165,7 +165,7 @@ class DataRepository:
                     backoff = min(backoff * 2, 30)  # Exponential backoff
                 else:
                     logger.error(f"API request failed: {e}")
-                    raise error.UpbitServiceUnavailableException()
+                    raise error.BtcOhlcvNotFoundException()
         return [], {}
 
     @RedisCacheDecorator()
@@ -178,7 +178,7 @@ class DataRepository:
             try:
                 data, _ = await self.fetch_ohlcv_data(session, market, to, 1, 1)
                 if not data:
-                    raise error.UpbitServiceUnavailableException()
+                    raise error.BtcOhlcvNotFoundException()
                 ohlcv_data = data[0]  # 최신 데이터 1개만 사용
                 return BtcOhlcvResp(
                     time=ohlcv_data["candle_date_time_kst"],
@@ -193,7 +193,7 @@ class DataRepository:
                 logger.error(e)
                 raise
 
-            except error.UpbitServiceUnavailableException as e:
+            except error.BtcOhlcvNotFoundException() as e:
                 logger.error(e)
                 raise
 

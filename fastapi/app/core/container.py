@@ -15,7 +15,9 @@ class Container(containers.DeclarativeContainer):
     )
 
     data_repository = providers.Factory(repositories.DataRepository)
-    predict_repository = providers.Factory(repositories.PredictRepository)
+    predict_repository = providers.Factory(
+        repositories.PredictRepository, data_repository=data_repository
+    )
     xai_repository = providers.Factory(repositories.XaiRepository)
 
     db_session = providers.Factory(AsyncScopedSession)

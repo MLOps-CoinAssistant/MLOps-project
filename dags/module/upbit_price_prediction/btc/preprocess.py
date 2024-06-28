@@ -72,10 +72,10 @@ async def fill_missing_and_null_data(
 ) -> None:
     """
     - XCom으로 받아온 변수 설명
-    initial_insert : save_raw_data_API_fn 태스크에서 데이터를 적재할 때 최초 삽입시 True, 아닐시 False
-    new_time : save_raw_data_API_fn 태스크에서 적재 후 db에 적재된 데이터 중 가장 최근시간
-    past_new_time : save_raw_data_API_fn 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
-    current_time : save_raw_data_API_fn 태스크에서 업비트에 데이터를 호출했을 당시의 시간을 second=0, microsecond=0 으로 잘라놓은 시간
+    initial_insert : save_raw_data_from_UPBIT_API 태스크에서 데이터를 적재할 때 최초 삽입시 True, 아닐시 False
+    new_time : save_raw_data_from_UPBIT_API 태스크에서 적재 후 db에 적재된 데이터 중 가장 최근시간
+    past_new_time : save_raw_data_from_UPBIT_API 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
+    current_time : save_raw_data_from_UPBIT_API 태스크에서 업비트에 데이터를 호출했을 당시의 시간을 second=0, microsecond=0 으로 잘라놓은 시간
 
 
     - 함수에 대한 설명
@@ -1137,11 +1137,11 @@ async def preprocess_data(context: dict) -> None:
     """
     XCom으로 받아온 변수 설명
     db_uri : db주소
-    minutes : save_raw_data_API_fn 태스크에서 호출한 데이터가 몇분봉 데이터인지
-    initial_insert : save_raw_data_API_fn 태스크에서 데이터를 적재할 때 최초 삽입시 True, 아닐시 False
-    new_time : save_raw_data_API_fn 태스크에서 적재 후 db에 적재된 데이터 중 가장 최근시간
-    past_new_time : save_raw_data_API_fn 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
-    current_time : save_raw_data_API_fn 태스크에서 업비트에 데이터를 호출했을 당시의 시간
+    minutes : save_raw_data_from_UPBIT_API 태스크에서 호출한 데이터가 몇분봉 데이터인지
+    initial_insert : save_raw_data_from_UPBIT_API 태스크에서 데이터를 적재할 때 최초 삽입시 True, 아닐시 False
+    new_time : save_raw_data_from_UPBIT_API 태스크에서 적재 후 db에 적재된 데이터 중 가장 최근시간
+    past_new_time : save_raw_data_from_UPBIT_API 태스크에서 적재 되기 전에 db에 존재하는 데이터 중 가장 최근시간 (없으면 None)
+    current_time : save_raw_data_from_UPBIT_API 태스크에서 업비트에 데이터를 호출했을 당시의 시간
     """
     db_uri = context["db_uri"]
     engine = create_async_engine(
@@ -1178,7 +1178,7 @@ async def preprocess_data(context: dict) -> None:
 
     # 데이터가 추가되지 않았을시에는 이 작업을 하지 않음
     if new_time is None:
-        logger.info("No new data to process. Exiting preprocess_data_fn.")
+        logger.info("No new data to process. Exiting preprocess_data.")
         return
 
     try:
@@ -1283,17 +1283,17 @@ async def preprocess_data(context: dict) -> None:
 def preprocess_data_fn(**context) -> None:
     s = time.time()
     ti = context["ti"]
-    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table_fn")
-    minutes = ti.xcom_pull(key="minutes", task_ids="save_raw_data_from_API_fn")
+    db_uri = ti.xcom_pull(key="db_uri", task_ids="create_table")
+    minutes = ti.xcom_pull(key="minutes", task_ids="save_raw_data_from_UPBIT_API")
     initial_insert = ti.xcom_pull(
-        key="initial_insert", task_ids="save_raw_data_from_API_fn"
+        key="initial_insert", task_ids="save_raw_data_from_UPBIT_API"
     )
-    new_time = ti.xcom_pull(key="new_time", task_ids="save_raw_data_from_API_fn")
+    new_time = ti.xcom_pull(key="new_time", task_ids="save_raw_data_from_UPBIT_API")
     past_new_time = ti.xcom_pull(
-        key="past_new_time", task_ids="save_raw_data_from_API_fn"
+        key="past_new_time", task_ids="save_raw_data_from_UPBIT_API"
     )
     current_time = ti.xcom_pull(
-        key="current_time", task_ids="save_raw_data_from_API_fn"
+        key="current_time", task_ids="save_raw_data_from_UPBIT_API"
     )
     # 비동기 함수 호출 시 전달할 context 생성(XCom은 JSON직렬화를 요구해서 그냥 쓸려고하면 비동기함수와는 호환이 안됨)
     async_context = {

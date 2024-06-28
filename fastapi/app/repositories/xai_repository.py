@@ -1,11 +1,10 @@
-from fastapi import HTTPException
 from app.core.logger import logger
 from app.core.db.session import AsyncScopedSession
 from app.core.redis import RedisCacheDecorator
 from app.core.errors import error
 from app.models.db.model import BTCFeatureImportances
 from sqlalchemy import select, func
-from app.models.schemas.common import BaseResponse, HttpResponse, ErrorResponse
+from app.models.schemas.common import HttpResponse
 from app.models.schemas.xai import BTCFeatureImportancesResp
 from typing import List
 

@@ -6,7 +6,7 @@ from httpx import AsyncClient
 from unittest.mock import AsyncMock
 from app.core.container import Container
 from app.core.errors import error
-from app.models.schemas.data_test import BtcOhlcvResp, BtcPreprocessedResp
+from app.models.schemas.data import BtcOhlcvResp, BtcPreprocessedResp
 
 from app.services import DataService
 
@@ -269,14 +269,14 @@ async def test_get_latest_ohlcv_data_400(
 ):
     # 예외 발생하도록 설정
     data_repository_mock.get_latest_ohlcv_data.side_effect = (
-        error.UpbitServiceUnavailableException()
+        error.BtcOhlcvNotFoundException()
     )
     data_service_mock.data_repository = data_repository_mock
     container.data_service.override(data_service_mock)
 
     market = "KRW-BTC"
     # pytest.raises()안의 에러가 발생해야만 테스트가 통과됨
-    with pytest.raises(error.UpbitServiceUnavailableException):
+    with pytest.raises(error.BtcOhlcvNotFoundException):
         await data_service_mock.get_latest_ohlcv_data(market)
 
 

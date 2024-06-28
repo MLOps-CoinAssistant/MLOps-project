@@ -1,7 +1,7 @@
 from app import repositories
 from aiohttp import ClientSession
 
-from app.models.schemas.data_test import BtcOhlcvResp, BtcPreprocessedResp
+from app.models.schemas.data import BtcOhlcvResp, BtcPreprocessedResp
 
 from app.core.logger import logger
 from typing import List
