@@ -30,7 +30,7 @@ class PredictRepository:
     def __init__(self, data_repository: DataRepository):
         self.data_repository = data_repository
 
-    @RedisCacheDecorator()
+    @RedisCacheDecorator(ttl=300)
     async def predict(self) -> List[BtcPredictionResp]:
         """
         가장 최근의 학습에서 저장된 모델로 예측한 결과
