@@ -1,0 +1,327 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 5,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "edq6vggi32nswc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 14,
+        "x": 0,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "edq6vggi32nswc"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  mv.name AS model_name,\r\n  mv.version,\r\n  to_timestamp(mv.creation_time / 1000) AS creation_time,\r\n  to_timestamp(mv.last_updated_time / 1000) AS last_transition_time,\r\n  mv.current_stage,\r\n  m.key AS metric_name,\r\n  m.value AS metric_value\r\nFROM\r\n  model_versions mv\r\nLEFT JOIN\r\n  metrics m ON mv.run_id = m.run_uuid AND m.key = 'f1_score'\r\nWHERE\r\n  mv.current_stage = 'Production'\r\nORDER BY\r\n  mv.last_updated_time DESC\r\nLIMIT 10;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Production Model INFO",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "edq6vggi32nswc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 14,
+        "x": 0,
+        "y": 4
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "edq6vggi32nswc"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  mv.name AS model_name,\r\n  m.value AS f1_score,\r\n  mv.version,\r\n  mv.current_stage,\r\n  to_timestamp(mv.creation_time / 1000) AS creation_time\r\nFROM\r\n  model_versions mv\r\nLEFT JOIN\r\n  metrics m ON mv.run_id = m.run_uuid AND m.key = 'f1_score'\r\nORDER BY\r\n  mv.creation_time DESC\r\nLIMIT 10;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Trained Model f1-score latest 10",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "edq6vggi32nswc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "production_creation_time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 209
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "production_transition_time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 19,
+        "x": 0,
+        "y": 12
+      },
+      "id": 4,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "edq6vggi32nswc"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH production_models AS (\r\n  SELECT\r\n    name AS model_name,\r\n    version,\r\n    to_timestamp(last_updated_time / 1000) AS production_transition_time,\r\n    run_id\r\n  FROM\r\n    model_versions\r\n  WHERE\r\n    current_stage = 'Production'\r\n),\r\nprevious_models AS (\r\n  SELECT\r\n    name AS model_name,\r\n    version,\r\n    to_timestamp(last_updated_time / 1000) AS previous_transition_time,\r\n    run_id\r\n  FROM\r\n    model_versions\r\n  WHERE\r\n    current_stage != 'Production'\r\n),\r\nprevious_model_f1 AS (\r\n  SELECT\r\n    run_uuid,\r\n    value AS previous_f1_score\r\n  FROM\r\n    metrics\r\n  WHERE\r\n    key = 'f1_score'\r\n),\r\nproduction_model_f1 AS (\r\n  SELECT\r\n    run_uuid,\r\n    value AS production_f1_score\r\n  FROM\r\n    metrics\r\n  WHERE\r\n    key = 'f1_score'\r\n)\r\nSELECT\r\n  p.model_name,\r\n  p.version AS production_version,\r\n  p.production_transition_time,\r\n  prev.version AS previous_version,\r\n  prev.previous_transition_time,\r\n  prev_f1.previous_f1_score,\r\n  prod_f1.production_f1_score\r\nFROM\r\n  production_models p\r\nLEFT JOIN\r\n  previous_models prev ON p.model_name = prev.model_name AND p.production_transition_time > prev.previous_transition_time\r\nLEFT JOIN\r\n  previous_model_f1 prev_f1 ON prev.run_id = prev_f1.run_uuid\r\nLEFT JOIN\r\n  production_model_f1 prod_f1 ON p.run_id = prod_f1.run_uuid\r\nORDER BY\r\n  p.production_transition_time DESC\r\nLIMIT 20;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Production and Previous Model f1-score",
+      "type": "table"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "MLflow Monitoring",
+  "uid": "adq6yk9mqa9dsd",
+  "version": 1,
+  "weekStart": ""
+}

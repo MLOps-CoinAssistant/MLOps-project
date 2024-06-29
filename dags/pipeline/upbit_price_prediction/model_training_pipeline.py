@@ -63,7 +63,6 @@ def model_training_pipeline():
         timeout=1800,
         poke_interval=30,  # 60초마다 감지
         execution_date_fn=get_closest_execution_date,
-        # execution_date_fn=get_most_recent_execution_date,
     )
 
     train_model_task = PythonOperator(
