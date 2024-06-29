@@ -89,8 +89,8 @@ class ProductionConfig(Config):
     APP_HOST: str = "prediction.bitcoin.com"
 
     OPENAPI_URL: str = "/openapi.json"
-    DOCS_URL: str = ""
-    REDOC_URL: str = ""
+    DOCS_URL: str = "/docs"
+    REDOC_URL: str = "/redoc"
     ENV: str = "prod"
 
 
