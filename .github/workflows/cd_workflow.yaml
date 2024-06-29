@@ -33,13 +33,6 @@ jobs:
       - name: Show Output
         run: echo ${{ steps.deploy.outputs.url }}
 
-      - name: Set permissions to allow all users to invoke
-        run: |
-          gcloud run services add-iam-policy-binding ${{ env.SERVICE }} \
-            --region ${{ env.REGION }} \
-            --member="allUsers" \
-            --role="roles/run.invoker"
-
       - name: Build and Push Container
         run: |-
           gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
