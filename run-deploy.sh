@@ -18,6 +18,19 @@ fi
     # HEALTH CHECK
         # docker run --env-file .env -p 8001:8000 $REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/latest
 
+
+# 커넥터를 생성하는 명령(최초에 한 번만 실행)
+# gcloud compute networks vpc-access connectors create <CONNECTOR_NAME> \
+#     --network <NETWORK_NAME> \
+#     --region <REGION> \
+#     --range <IP_RANGE>
+
+# [디버깅] 커넥터를 지우는 명령(필요할 때만 실행)
+# gcloud compute networks vpc-access connectors delete <CONNECTOR_NAME> --region=<REGION>
+
+# [디버깅] 서브넷 범위 확인
+# gcloud compute networks subnets list --network=default --regions=asia-northeast3
+
 cd fastapi
 
 # gcloud builds submit --tag $REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_NAME/latest .
