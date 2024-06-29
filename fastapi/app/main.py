@@ -1,7 +1,9 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from starlette_context.middleware import ContextMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+import logging
+import aiohttp
 
 from app.core.config import config
 from app.core.lifespan import lifespan
@@ -12,6 +14,7 @@ from app.core.middlewares.metric_middleware import MetricMiddleware
 from app.core.errors.error import BaseAPIException, BaseAuthException
 from app.core.errors.handler import api_error_handler, api_auth_error_handler
 from app.routers import router
+from app.core.db.session import ping_db
 
 
 def create_app(container=Container()) -> FastAPI:
@@ -41,7 +44,62 @@ app = create_app()
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello World"}
+    return {"message": f"It's BTC price prediction backend server."}
+
+
+@app.get("/healthcheck")
+async def healthcheck():
+    try:
+        await ping_db()
+        return {"status": "healthy"}
+    except Exception as e:
+        return {"status": "unhealthy", "details": str(e)}
+
+
+@app.get("/health/minio", status_code=status.HTTP_200_OK)
+async def healthcheck_minio():
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=10)
+    ) as session:
+        try:
+            async with session.get(
+                f"{config.MINIO_SERVER_URL}/minio/health/live"
+            ) as response:
+                if response.status == 200:
+                    return {"status": "Minio is healthy"}
+                else:
+                    details = await response.text()
+                    logging.error(f"Minio healthcheck failed: {details}")
+                    return {
+                        "status": "Minio is not healthy",
+                        "details": await response.text(),
+                    }
+        except Exception as e:
+            logging.error(f"Minio healthcheck failed: {str(e)}")
+            return {"status": "Minio healthcheck failed", "error": str(e)}
+
+
+@app.get("/health/mlflow", status_code=status.HTTP_200_OK)
+async def healthcheck_mlflow():
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=10)
+    ) as session:
+        try:
+            async with session.get(
+                f"{config.MLFLOW_TRACKING_URI_LOCAL}:{config.MLFLOW_TRACKING_PORT}"
+            ) as response:
+                if response.status == 200:
+                    return {"status": "MLflow is healthy"}
+                else:
+                    details = await response.text()
+                    logging.error(f"MLflow healthcheck failed: {details}")
+                    return {
+                        "status": "MLflow is not healthy",
+                        "details": await response.text(),
+                    }
+        except Exception as e:
+            logging.error(f"MLflow healthcheck failed: {str(e)}")
+            return {"status": "MLflow healthcheck failed", "error": str(e)}
 
 
 @app.get("/metrics")

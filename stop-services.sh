@@ -20,6 +20,12 @@ if [ -n "$uvicorn_process" ]; then
   kill -9 $uvicorn_process
 fi
 
+uvicorn_docker_process=$(docker ps -a | grep entrypoint | awk '{print $1}')
+if [ -n "$uvicorn_docker_process" ]; then
+  docker stop $uvicorn_docker_process && docker rm $uvicorn_docker_process
+  # kill -9 $uvicorn_docker_process
+fi
+
 # 포트 8000을 사용 중인 모든 프로세스 종료
 pids=$(sudo lsof -t -i :8000)
 if [ -n "$pids" ]; then
@@ -41,7 +47,7 @@ if [ -n "$mlflow_containers" ]; then
   docker rm $mlflow_containers
 fi
 
-conda deactivate 
+conda deactivate
 
 # 현재 실행 중인 모든 컨테이너 목록 표시
 docker ps -a

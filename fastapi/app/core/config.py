@@ -56,6 +56,11 @@ class Config(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
 
+    MLFLOW_TRACKING_URI_LOCAL: str = os.getenv(
+        "MLFLOW_TRACKING_URI_CLOUD_RUN", "http://localhost"
+    )
+    MLFLOW_TRACKING_PORT: str = os.getenv("MLFLOW_TRACKING_PORT", "5000")
+
     @property
     def fastapi_kwargs(self) -> Dict[str, Any]:
         return {
@@ -84,8 +89,8 @@ class ProductionConfig(Config):
     APP_HOST: str = "prediction.bitcoin.com"
 
     OPENAPI_URL: str = "/openapi.json"
-    DOCS_URL: str = ""
-    REDOC_URL: str = ""
+    DOCS_URL: str = "/docs"
+    REDOC_URL: str = "/redoc"
     ENV: str = "prod"
 
 
