@@ -12,6 +12,7 @@ PR 요청받는 분도 각자 QA 테스트를 진행해주시고, 이를 PR 리�
     
 ## To Reviewer
 - 리뷰어가 유념해야 할 사항을 적어주세요.
+- 특히, QA 테스트를 할 수 있도록 실행 방법 등을 기술해주세요.
 
 ## Acceptance Criteria
 - 해당 작업이 PR(Product Requirements)의 요구사항을 만족하기 위한 정량적/정성적 근거를 기술해주세요.
