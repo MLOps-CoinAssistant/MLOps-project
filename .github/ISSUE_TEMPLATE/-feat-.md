@@ -1,7 +1,7 @@
 ---
-name: "[FEAT]"
+name: "[issue label 명]"
 about: 'TWD에 기술된 todo(SR)를 따옵니다. '
-title: "[FEAT] "
+title: "[issue label 명] "
 labels: ''
 assignees: ''
 
