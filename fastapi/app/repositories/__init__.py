@@ -1,3 +1,0 @@
-from app.repositories.data_repository import DataRepository
-from app.repositories.predict_repository import PredictRepository
-from app.repositories.xai_repository import XaiRepository

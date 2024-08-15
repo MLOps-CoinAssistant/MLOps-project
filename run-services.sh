@@ -37,9 +37,9 @@ if ! docker ps -a | grep -q ml-ops-proj; then
 fi
 
 # backend 서비스가 이미 실행 중인지 확인
-if ! ps -a | grep -q fastapi && ! ps -a | grep -q uvicorn; then
-    ./run-local-backend.sh &
-fi
+# if ! ps -a | grep -q fastapi && ! ps -a | grep -q uvicorn; then
+#     ./run-local-backend.sh &
+# fi
 
 # Docker 상태 확인
 docker ps -a
@@ -47,3 +47,19 @@ docker ps -a
 # Astro Dev 로그 확인
 astro dev logs --webserver &
 astro dev logs --scheduler &
+
+# Redis 컨테이너가 이미 실행 중인지 확인하고, 실행 중이지 않으면 실행
+# if [ ! "$(docker ps -q -f name=redis)" ]; then
+#     if [ "$(docker ps -aq -f status=exited -f name=redis)" ]; then
+#         # Cleanup
+#         docker rm redis
+#     fi
+#     # Run Redis container
+#     docker run --name redis -p 6379:6379 -d redis:7.2
+# fi
+
+export ENV=local
+export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+export MLFLOW_S3_ENDPOINT_URL=${MLFLOW_S3_ENDPOINT_URL}:${MLFLOW_S3_ENDPOINT_MAIN_PORT}
+export MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI_LOCAL}:${MLFLOW_TRACKING_PORT}

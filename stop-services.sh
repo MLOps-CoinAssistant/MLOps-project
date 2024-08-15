@@ -10,27 +10,27 @@ set +a
 eval "$(conda shell.bash hook)"
 
 # backend-start.sh로 실행된 프로세스 중지
-backend_process=$(ps -a | grep backend | awk '{print $1}')
-if [ -n "$backend_process" ]; then
-  kill -9 $backend_process
-fi
+# backend_process=$(ps -a | grep backend | awk '{print $1}')
+# if [ -n "$backend_process" ]; then
+#   kill -9 $backend_process
+# fi
 
-uvicorn_process=$(ps -a | grep uv | awk '{print $1}')
-if [ -n "$uvicorn_process" ]; then
-  kill -9 $uvicorn_process
-fi
+# uvicorn_process=$(ps -a | grep uv | awk '{print $1}')
+# if [ -n "$uvicorn_process" ]; then
+#   kill -9 $uvicorn_process
+# fi
 
-uvicorn_docker_process=$(docker ps -a | grep entrypoint | awk '{print $1}')
-if [ -n "$uvicorn_docker_process" ]; then
-  docker stop $uvicorn_docker_process && docker rm $uvicorn_docker_process
-  # kill -9 $uvicorn_docker_process
-fi
+# uvicorn_docker_process=$(docker ps -a | grep entrypoint | awk '{print $1}')
+# if [ -n "$uvicorn_docker_process" ]; then
+#   docker stop $uvicorn_docker_process && docker rm $uvicorn_docker_process
+#   # kill -9 $uvicorn_docker_process
+# fi
 
-# 포트 8000을 사용 중인 모든 프로세스 종료
-pids=$(sudo lsof -t -i :8000)
-if [ -n "$pids" ]; then
-  sudo kill -9 $pids
-fi
+# # 포트 8000을 사용 중인 모든 프로세스 종료
+# pids=$(sudo lsof -t -i :8000)
+# if [ -n "$pids" ]; then
+#   sudo kill -9 $pids
+# fi
 
 conda deactivate
 
