@@ -1,4 +1,4 @@
-name: Build and Deploy to Cloud Run
+name: test
 
 on:
   push:
