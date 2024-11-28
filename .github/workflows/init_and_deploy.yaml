@@ -6,7 +6,7 @@ on:
       - develop
 
 jobs:
-  setup:
+  initialization:
     runs-on: ubuntu-latest
 
     steps:
