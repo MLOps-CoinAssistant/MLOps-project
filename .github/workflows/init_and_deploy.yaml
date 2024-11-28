@@ -87,21 +87,21 @@ jobs:
               echo "⭐️ .env 파일 설정"
               # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
               cat <<EOF > .env
-DB_TYPE=${{ vars.DB_TYPE }}
-DB_USER=${{ secrets.DB_USER }}
-DB_PW=${{ secrets.DB_PW }}
-DB_HOST=${{ secrets.DB_HOST }}
-DB_PORT=${{ secrets.DB_PORT }}
-MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}
-MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}
-AIRFLOW_SMTP_USER=${{ secrets.AIRFLOW_SMTP_USER }}
-AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-AIRFLOW_SMTP_PASSWORD=${{ secrets.AIRFLOW_SMTP_PASSWORD }}
-MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}
-MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}
-SMTP_MAIL_ADDRESS=${{ secrets.SMTP_MAIL_ADDRESS }}
-EOF
+                DB_TYPE=${{ vars.DB_TYPE }}
+                DB_USER=${{ secrets.DB_USER }}
+                DB_PW=${{ secrets.DB_PW }}
+                DB_HOST=${{ secrets.DB_HOST }}
+                DB_PORT=${{ secrets.DB_PORT }}
+                MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}
+                MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}
+                AIRFLOW_SMTP_USER=${{ secrets.AIRFLOW_SMTP_USER }}
+                AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+                AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                AIRFLOW_SMTP_PASSWORD=${{ secrets.AIRFLOW_SMTP_PASSWORD }}
+                MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}
+                MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}
+                SMTP_MAIL_ADDRESS=${{ secrets.SMTP_MAIL_ADDRESS }}
+              EOF
 
               echo "⭐️ Astronomer 개발 서버 시작"
               astro dev start
