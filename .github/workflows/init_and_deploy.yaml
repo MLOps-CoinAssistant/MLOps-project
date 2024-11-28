@@ -21,22 +21,33 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           script: |
             if [ ! -f /home/${{ secrets.SSH_USERNAME }}/.setup_done ]; then
+              echo "⭐️ Git 설정"
               git config --global user.name "team JATH"
               git config --global user.email "dohk325@gmail.com"
 
+              echo "⭐️ 시스템 업데이트 및 패키지 설치"
               sudo apt update && sudo apt -y upgrade
+
+              echo "⭐️ PostgreSQL 설정"
               sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
               wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
               sudo apt-get update && sudo apt-get -y install postgresql-14
+
+              echo "⭐️ 필요한 패키지 설치"
               sudo apt-get -y install apt-transport-https ca-certificates curl gnupg-agent software-properties-common
+
+              echo "⭐️ Docker 설치"
               curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
               sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
               sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io
               sudo usermod -aG docker ${{ secrets.SSH_USERNAME }}
               sudo chmod 666 /var/run/docker.sock
               sudo systemctl restart docker
+
+              echo "⭐️ Docker Compose 설치"
               sudo apt -y install docker-compose
 
+              echo "⭐️ SSH 키 생성 및 GitHub 등록"
               if [ ! -f ~/.ssh/id_rsa ]; then
                 ssh-keygen -t rsa -b 4096 -C "COAMIDO" -f ~/.ssh/id_rsa -N ""
               fi
@@ -47,14 +58,18 @@ jobs:
                   -d "{\"title\":\"workflow-ssh-key\",\"key\":\"$PUBLIC_KEY\"}" \
                   https://api.github.com/user/keys
 
+              echo "⭐️ Miniconda 설치"
               wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O Miniconda3.sh
               bash Miniconda3.sh -b -p $HOME/miniconda
               echo "export PATH=\"$HOME/miniconda/bin:\$PATH\"" >> ~/.bashrc
               source ~/.bashrc
               source $HOME/miniconda/etc/profile.d/conda.sh
+
+              echo "⭐️ Conda 환경 생성"
               conda create -n mlops-pipeline python=3.11 -y
               conda create -n fastapi python=3.11 -y
 
+              echo "⭐️ Git 리포지토리 클론 및 환경 설정"
               git clone git@github.com:MLOps-CoinAssistant/MLOps-project.git
               git clone git@github.com:MLOps-CoinAssistant/fastapi.git
               cd MLOps-project
@@ -65,37 +80,44 @@ jobs:
               pip install pre-commit
               conda deactivate
 
+              echo "⭐️ Astronomer 설치"
               curl -sSL install.astronomer.io | sudo bash -s -- v1.25.0
               echo 'n' | astro dev init
 
+              echo "⭐️ .env 파일 설정"
+              # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
               touch .env
               cat <<EOF > .env
-              DB_TYPE=${{ vars.DB_TYPE }}
-              DB_USER=${{ secrets.DB_USER }}
-              DB_PW=${{ secrets.DB_PW }}
-              DB_HOST=${{ secrets.DB_HOST }}
-              DB_PORT=${{ secrets.DB_PORT }}
-              MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}
-              MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}
-              AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-              AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-              MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}
-              MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}
-              EOF
+              echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
+              echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+              echo "DB_PW=${{ secrets.DB_PW }}" >> .env
+              echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+              echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+              echo "MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}" >> .env
+              echo "MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}" >> .env
+              echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
+              echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+              echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
+              echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
 
+              echo "⭐️ Astronomer 개발 서버 시작"
               astro dev start
               sleep 210 || true
-              pkill astro
-              sudo systemctl stop postgresql
-              astro dev start --compose-file compose.yaml
+              if grep -q "address already in use" astro_error.log; then
+                echo "‼️ 포트 5432가 이미 사용 중입니다. Astro 프로세스를 종료합니다."
+                pkill astro
+                sudo systemctl stop postgresql
+                astro dev start --compose-file compose.yaml
+              fi
               astro dev stop && astro dev kill
 
+              echo "⭐️ airflow plugins 폴더 권한 변경 완료"
               sudo chown ubuntu plugins
               sudo chgrp ubuntu plugins
 
-              touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
-            else
-              echo "Setup already completed"
+              echo "⭐️ pre-commit 설정 "
+              cat <<EOF > .pre-commit-config.yaml
+
             fi
 
   deployment:
@@ -107,11 +129,18 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Deploy Application
+        # env:
+        #   REPOSITORY_NAME: ${{ github.event.repository.name }}
         uses: appleboy/ssh-action@master
         with:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           script: |
-            cd $HOME/${{ vars.repository_name }}
+            cd
+            CURRENT_DIR=$(pwd)
+            cd $CURRENT_DIR/${{ vars.repository_name }}
+            echo "현재 위치: $(pwd)"
             git pull origin main
+            echo "⭐️ 배포 완료"
+            # 추가적인 배포 명령어들
