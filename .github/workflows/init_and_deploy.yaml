@@ -132,7 +132,6 @@ repos:
     rev: 24.10.0
     hooks:
     -   id: black
-EOF
               pre-commit autoupdate
               pre-commit install
 
