@@ -86,6 +86,7 @@ jobs:
 
               echo "⭐️ .env 파일 설정"
               # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
+              touch .env
               cat <<EOF > .env
                 DB_TYPE=${{ vars.DB_TYPE }}
                 DB_USER=${{ secrets.DB_USER }}
