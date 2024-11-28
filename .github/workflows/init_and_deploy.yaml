@@ -20,84 +20,94 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
             if [ ! -f /home/${{ secrets.SSH_USERNAME }}/.setup_done ]; then
+              echo "⭐️ Git 설정"
+              git config --global user.name "team JATH"
+              git config --global user.email "dohk325@gmail.com"
+
               echo "⭐️ 시스템 업데이트 및 패키지 설치"
-            sudo apt update && sudo apt -y upgrade
+              sudo apt update && sudo apt -y upgrade
 
-            echo "⭐️ PostgreSQL 설정"
-            sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-            wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-            sudo apt-get update && sudo apt-get -y install postgresql-14
+              echo "⭐️ PostgreSQL 설정"
+              sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+              wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+              sudo apt-get update && sudo apt-get -y install postgresql-14
 
-            echo "⭐️ 필요한 패키지 설치"
-            sudo apt-get install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common
+              echo "⭐️ 필요한 패키지 설치"
+              sudo apt-get -y install postgresql-14 apt-transport-https ca-certificates curl gnupg-agent software-properties-common
 
-            echo "⭐️ Docker 설치"
-            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-            sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-            sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-            sudo usermod -aG docker ${{ secrets.SSH_USERNAME }}
-            sudo chmod 666 /var/run/docker.sock
-            sudo systemctl restart docker
-            sudo service docker restart
+              echo "⭐️ Docker 설치"
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+              sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+              sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+              sudo usermod -aG docker ${{ secrets.SSH_USERNAME }}
+              sudo chmod 666 /var/run/docker.sock
+              sudo systemctl restart docker
+              sudo service docker restart
 
-            echo "⭐️ SSH 키 생성 및 GitHub 등록"
-            if [ ! -f ~/.ssh/id_rsa ]; then
-              ssh-keygen -t rsa -b 4096 -C "COAMIDO" -f ~/.ssh/id_rsa -N ""
-            fi
-            ssh-keyscan github.com >> ~/.ssh/known_hosts
-            PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
-            curl -H "Authorization: token ${{ secrets.TOKEN }}" \
-                -X POST \
-                -d "{\"title\":\"workflow-ssh-key\",\"key\":\"$PUBLIC_KEY\"}" \
-                https://api.github.com/user/keys
+              echo "⭐️ docker compose 설치"
+              sudo apt -y install docker-compose
 
-            echo "⭐️ Miniconda 설치"
-            wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O Miniconda3.sh
-            bash Miniconda3.sh -b -p $HOME/miniconda
-            echo "export PATH=\"$HOME/miniconda/bin:\$PATH\"" >> ~/.bashrc
-            source ~/.bashrc
-            source $HOME/miniconda/etc/profile.d/conda.sh
+              echo "⭐️ SSH 키 생성 및 GitHub 등록"
+              if [ ! -f ~/.ssh/id_rsa ]; then
+                ssh-keygen -t rsa -b 4096 -C "COAMIDO" -f ~/.ssh/id_rsa -N ""
+              fi
+              ssh-keyscan github.com >> ~/.ssh/known_hosts
+              PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
+              curl -H "Authorization: token ${{ secrets.TOKEN }}" \
+                  -X POST \
+                  -d "{\"title\":\"workflow-ssh-key\",\"key\":\"$PUBLIC_KEY\"}" \
+                  https://api.github.com/user/keys
 
-            echo "⭐️ Conda 환경 생성"
-            conda create -n mlops-pipeline python=3.11 -y
-            conda create -n fastapi python=3.11 -y
+              echo "⭐️ Miniconda 설치"
+              wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O Miniconda3.sh
+              bash Miniconda3.sh -b -p $HOME/miniconda
+              echo "export PATH=\"$HOME/miniconda/bin:\$PATH\"" >> ~/.bashrc
+              source ~/.bashrc
+              source $HOME/miniconda/etc/profile.d/conda.sh
 
-            echo "⭐️ Git 리포지토리 클론 및 환경 설정"
-            git clone git@github.com:MLOps-CoinAssistant/MLOps-project.git
-            git clone git@github.com:MLOps-CoinAssistant/fastapi.git
-            cd MLOps-project
-            conda activate mlops-pipeline
-            pip install pip==24.0
-            pip install mlflow==1.27.0
-            pip install poetry
-            pip install pre-commit
+              echo "⭐️ Conda 환경 생성"
+              conda create -n mlops-pipeline python=3.11 -y
+              conda create -n fastapi python=3.11 -y
 
-            echo "⭐️ Astronomer 설치"
-            curl -sSL install.astronomer.io | sudo bash -s -- v1.25.0
-            echo 'n' | astro dev init
+              echo "⭐️ Git 리포지토리 클론 및 환경 설정"
+              git clone git@github.com:MLOps-CoinAssistant/MLOps-project.git
+              git clone git@github.com:MLOps-CoinAssistant/fastapi.git
+              cd MLOps-project
+              conda activate mlops-pipeline
+              pip install pip==24.0
+              pip install mlflow==1.27.0
+              pip install poetry
+              pip install pre-commit
+              conda deactivate
 
-            echo "⭐️ .env 파일 설정"
-            # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
-            echo "DB_TYPE=${{ vars.DB_TYPE }}" >> .env
-            echo "DB_USER=${{ secrets.DB_USER }}" >> .env
-            echo "DB_PW=${{ secrets.DB_PW }}" >> .env
-            echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
-            echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
-            echo "MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}" >> .env
-            echo "MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}" >> .env
-            echo "AIRFLOW_SMTP_USER=${{ secrets.AIRFLOW_SMTP_USER }}" >> .env
-            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
-            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
-            echo "AIRFLOW_SMTP_PASSWORD=${{ secrets.AIRFLOW_SMTP_PASSWORD }}" >> .env
-            echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
-            echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
-            echo "SMTP_MAIL_ADDRESS=${{ secrets.SMTP_MAIL_ADDRESS }}" >> .env
+              echo "⭐️ Astronomer 설치"
+              curl -sSL install.astronomer.io | sudo bash -s -- v1.25.0
+              echo 'n' | astro dev init
 
-            echo "⭐️ Astronomer 개발 서버 시작"
-            astro dev start
-            sleep 210 || true
-              if grep -q "Error response from daemon: driver failed programming external connectivity on endpoint ml-ops-project.*bind: address already in use" astro_error.log; then
-                echo "Port binding error detected, stopping PostgreSQL and restarting Astronomer."
+              echo "⭐️ .env 파일 설정"
+              # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
+              echo "DB_TYPE=${{ vars.DB_TYPE }}" >> .env
+              echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+              echo "DB_PW=${{ secrets.DB_PW }}" >> .env
+              echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+              echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+              echo "MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}" >> .env
+              echo "MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}" >> .env
+              echo "AIRFLOW_SMTP_USER=${{ secrets.AIRFLOW_SMTP_USER }}" >> .env
+              echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
+              echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+              echo "AIRFLOW_SMTP_PASSWORD=${{ secrets.AIRFLOW_SMTP_PASSWORD }}" >> .env
+              echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
+              echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
+              echo "SMTP_MAIL_ADDRESS=${{ secrets.SMTP_MAIL_ADDRESS }}" >> .env
+
+              echo "⭐️ Astronomer 개발 서버 시작"
+              astro dev start
+              echo "⭐️ 에러 로그에서 포트 사용 중 에러가 있는지 확인"
+              sleep 210 || true
+              if grep -q "address already in use" astro_error.log; then
+                echo "‼️ 포트 5432가 이미 사용 중입니다. Astro 프로세스를 종료합니다."
+                pkill astro
                 sudo systemctl stop postgresql
                 astro dev start --compose-file compose.yaml
               fi
@@ -105,12 +115,25 @@ jobs:
                 echo "Airflow startup detected, cancelling execution."
                 kill -INT $!
               fi
+              astro dev stop && astro dev kill
+
+              echo "⭐️ airflow plugins 폴더 권한 변경 완료"
+              sudo chown ubuntu plugins
+              sudo chgrp ubuntu plugins
+
+              echo "⭐️ 설정 완료"
+              touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
+
+              echo "⭐️ pre-commit 설정"
+              pre-commit autoupdate
+              pre-commit install
+              echo "# See https://pre-commit.com for more information
+
+            else
+              echo "⭐️ Already Initialized"
+            fi
 
 
-            echo "⭐️ pre-commit 설정"
-            pre-commit autoupdate
-            pre-commit install
-            echo "# See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
