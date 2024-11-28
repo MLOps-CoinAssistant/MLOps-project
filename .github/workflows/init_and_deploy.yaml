@@ -77,13 +77,10 @@ jobs:
               DB_PORT=${{ secrets.DB_PORT }}
               MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}
               MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}
-              AIRFLOW_SMTP_USER=${{ secrets.AIRFLOW_SMTP_USER }}
               AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
               AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-              AIRFLOW_SMTP_PASSWORD=${{ secrets.AIRFLOW_SMTP_PASSWORD }}
               MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}
               MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}
-              SMTP_MAIL_ADDRESS=${{ secrets.SMTP_MAIL_ADDRESS }}
               EOF
 
               astro dev start
