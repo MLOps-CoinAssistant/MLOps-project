@@ -46,7 +46,7 @@ jobs:
             fi
             ssh-keyscan github.com >> ~/.ssh/known_hosts
             PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
-            curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            curl -H "Authorization: token ${{ secrets.TOKEN }}" \
                 -X POST \
                 -d "{\"title\":\"workflow-ssh-key\",\"key\":\"$PUBLIC_KEY\"}" \
                 https://api.github.com/user/keys
