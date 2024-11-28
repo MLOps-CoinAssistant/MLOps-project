@@ -118,7 +118,7 @@ jobs:
               sudo chown ubuntu plugins
               sudo chgrp ubuntu plugins
 
-              echo "⭐️ pre-commit 설정"
+              echo "⭐️ pre-commit 설정 "
               cat <<EOF > .pre-commit-config.yaml
 
 repos:
