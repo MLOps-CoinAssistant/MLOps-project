@@ -19,7 +19,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          if [ ! -f /home/${{ secrets.SSH_USERNAME }}/.setup_done ]; then
+            if [ ! -f /home/${{ secrets.SSH_USERNAME }}/.setup_done ]; then
               echo "⭐️ 시스템 업데이트 및 패키지 설치"
             sudo apt update && sudo apt -y upgrade
 
