@@ -3,7 +3,7 @@ name: Instance Environment Setup Workflow
 on:
   push:
     branches:
-      - develop
+      - main
 
 jobs:
   setup:
@@ -19,8 +19,8 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
-          script: |
-            echo "⭐️ 시스템 업데이트 및 패키지 설치"
+          if [ ! -f /home/${{ secrets.SSH_USERNAME }}/.setup_done ]; then
+              echo "⭐️ 시스템 업데이트 및 패키지 설치"
             sudo apt update && sudo apt -y upgrade
 
             echo "⭐️ PostgreSQL 설정"
@@ -114,21 +114,21 @@ jobs:
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.2.0
+    rev: v5.0.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
     -   id: check-yaml
     -   id: check-added-large-files
 -   repo: https://github.com/psf/black
-    rev: stable
+    rev: 24.10.0
     hooks:
-    - id: black" > .pre-commit-config.yaml
+    -   id: black" > .pre-commit-config.yaml
 
             echo "⭐️ PostgreSQL 중지 및 Astronomer 종료"
             sudo systemctl stop postgresql
             astro dev stop && astro dev kill
 
             echo "⭐️ 설정 완료"
-
+              touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
             fi
