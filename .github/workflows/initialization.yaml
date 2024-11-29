@@ -134,7 +134,7 @@ jobs:
 
               echo "⭐️ Astronomer 개발 서버 초기화"
               astro dev start
-              if grep -q "address already in use" astro_error.log; then
+              if grep -q "address already in use"; then
                 echo "‼️ 포트 5432가 이미 사용 중입니다. Astro 프로세스를 종료합니다."
                 pkill astro
                 sudo systemctl stop postgresql
