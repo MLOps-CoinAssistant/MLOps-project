@@ -162,14 +162,12 @@ jobs:
     with:
       SSH_HOST: ${{ env.SSH_HOST }}
       SSH_USERNAME: ${{ env.SSH_USERNAME }}
-      # vars 값들을 직접 입력하거나 env로 전달
       DB_TYPE: ${{ vars.DB_TYPE }}
       ARTIFACT_ROOT: ${{ vars.ARTIFACT_ROOT }}
       ARTIFACT_MODEL_REGISTRY_PATH: ${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}
       ENV: ${{ vars.ENV }}
     secrets:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      # secrets 값들을 전달
       DB_USER: ${{ secrets.DB_USER }}
       DB_PW: ${{ secrets.DB_PW }}
       DB_HOST: ${{ secrets.DB_HOST }}
@@ -190,35 +188,6 @@ jobs:
       UVICORN_PORT: ${{ secrets.UVICORN_PORT }}
       REDIS_HOST: ${{ secrets.REDIS_HOST }}
       REDIS_PORT: ${{ secrets.REDIS_PORT }}
-
-                # echo "⭐️ .env 파일 설정"
-              # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
-              # touch .env
-              # echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
-              # echo "ARTIFACT_ROOT=${{ vars.ARTIFACT_ROOT }}" >> .env
-              # echo "ARTIFACT_MODEL_REGISTRY_PATH=${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}" >> .env
-              # echo "ENV=${{ vars.ENV }}" >> .env
-
-              # echo "DB_USER=${{ secrets.DB_USER }}" >> .env
-              # echo "DB_PW=${{ secrets.DB_PW }}" >> .env
-              # echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
-              # echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
-              # echo "MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}" >> .env
-              # echo "MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}" >> .env
-              # echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
-              # echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
-              # echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
-              # echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
-              # echo "MLFLOW_DB_HOST=${{ secrets.MLFLOW_DB_HOST }}" >> .env
-              # echo "MLFLOW_TRACKING_URI_LOCAL=${{ secrets.MLFLOW_TRACKING_URI_LOCAL }}" >> .env
-              # echo "MLFLOW_S3_ENDPOINT_SUB_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_SUB_PORT }}" >> .env
-              # echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" >> .env
-              # echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env
-              # echo "DB_DEFAULT_NAME=${{ secrets.DB_DEFAULT_NAME }}" >> .env
-              # echo "MLFLOW_SERVER_HOST=${{ secrets.MLFLOW_SERVER_HOST }}" >> .env
-              # echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
-              # echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
-              # echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
 
   configure_airflow:
     runs-on: ubuntu-latest
