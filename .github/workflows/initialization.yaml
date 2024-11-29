@@ -151,6 +151,7 @@ jobs:
                 echo "⭐️ Astronomer 개발 서버 시작"
                 export $(grep -v '^#' .env | xargs)
                 astro dev start --compose-file compose.yaml -e .env
+              fi
 
             fi
   deployment:
