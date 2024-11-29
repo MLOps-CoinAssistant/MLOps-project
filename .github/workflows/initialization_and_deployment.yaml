@@ -228,7 +228,6 @@ jobs:
 
             if git diff --name-only HEAD~1 | grep -E 'compose.yaml|.env'; then
               echo "⭐️ compose or .env 변동 감지됨"
-              astro dev stop
-              astro dev start -d
+              ./restart-airflow.sh
             fi
             echo "⭐️ Airflow 재시작 완료"
