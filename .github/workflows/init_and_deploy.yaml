@@ -124,9 +124,10 @@ jobs:
                   touch ~/MLOps-project/airflow_settings.yaml
               fi
 
-              echo "⭐️ Astronomer 개발 서버 시작:2"
-              export $(grep -v '^#' .env | xargs)
-              astro dev start --compose-file compose.yaml -e .env
+              if ! grep -q "Airflow is starting up!"; then
+                echo "⭐️ Astronomer 개발 서버 시작"
+                export $(grep -v '^#' .env | xargs)
+                astro dev start --compose-file compose.yaml -e .env
 
             fi
 
