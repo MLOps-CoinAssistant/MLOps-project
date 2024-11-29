@@ -49,11 +49,11 @@ jobs:
 
               echo "⭐️ SSH 키 생성 및 GitHub 등록"
               if [ ! -f ~/.ssh/id_rsa ]; then
-                ssh-keygen -t rsa -b 4096 -C "COAMIDO" -f ~/.ssh/id_rsa -N ""
+                ssh-keygen -t rsa -b 4096 -C "dohk325@gmail.com" -f ~/.ssh/id_rsa -N ""
               fi
               ssh-keyscan github.com >> ~/.ssh/known_hosts
               PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
-              curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              curl -H "Authorization: token ${{ secrets.TOKEN }}" \
                   -X POST \
                   -d "{\"title\":\"workflow-ssh-key\",\"key\":\"$PUBLIC_KEY\"}" \
                   https://api.github.com/user/keys
