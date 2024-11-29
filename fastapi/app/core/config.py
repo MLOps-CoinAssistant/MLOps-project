@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     DB_HOST: str = os.getenv("DB_HOST")
     DB_PORT: int = os.getenv("DB_PORT")
     DB_NAME: str = os.getenv("DB_DEFAULT_NAME")
-    UPBIT_ACCESS_KEY: str = os.getenv("UPBIT_ACCESS_KEY")
-    UPBIT_SECRET_KEY: str = os.getenv("UPBIT_SECRET_KEY")
+    UPBIT_ACCESS_API_KEY: str = os.getenv("UPBIT_ACCESS_API_KEY")
+    UPBIT_SECRET_API_KEY: str = os.getenv("UPBIT_SECRET_API_KEY")
 
     class Config:
         env_file = ".env"
@@ -31,8 +31,8 @@ settings = Settings()
 DB_URL: str = (
     f"{settings.DB_TYPE}+asyncpg://{settings.DB_USER}:{settings.DB_PW}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 )
-UPBIT_ACCESS_KEY: str = settings.UPBIT_ACCESS_KEY
-UPBIT_SECRET_KEY: str = settings.UPBIT_SECRET_KEY
+UPBIT_ACCESS_API_KEY: str = settings.UPBIT_ACCESS_API_KEY
+UPBIT_SECRET_API_KEY: str = settings.UPBIT_SECRET_API_KEY
 
 
 class Config(BaseSettings):
@@ -47,8 +47,8 @@ class Config(BaseSettings):
 
     LOG_LEVEL: int = logging.DEBUG
 
-    UPBIT_ACCESS_KEY: str = UPBIT_ACCESS_KEY
-    UPBIT_SECRET_KEY: str = UPBIT_SECRET_KEY
+    UPBIT_ACCESS_API_KEY: str = UPBIT_ACCESS_API_KEY
+    UPBIT_SECRET_API_KEY: str = UPBIT_SECRET_API_KEY
     MINIO_SERVER_URL: str = os.getenv("MLFLOW_S3_ENDPOINT_URL")
     MINIO_ACCESS_KEY: str = os.getenv("AWS_ACCESS_KEY_ID")
     MINIO_SECRET_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY")

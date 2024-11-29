@@ -141,7 +141,7 @@ class DataRepository:
         headers = {
             "Accept": "application/json",
             "Authorization": self.generate_jwt_token(
-                config.UPBIT_ACCESS_KEY, config.UPBIT_SECRET_KEY
+                config.UPBIT_ACCESS_API_KEY, config.UPBIT_SECRET_API_KEY
             ),
         }
         backoff = 1

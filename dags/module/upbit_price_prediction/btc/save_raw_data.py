@@ -92,7 +92,8 @@ async def fetch_ohlcv_data(
     headers = {
         "Accept": "application/json",
         "Authorization": generate_jwt_token(
-            APIInformation.UPBIT_ACCESS_KEY.value, APIInformation.UPBIT_SECRET_KEY.value
+            APIInformation.UPBIT_ACCESS_API_KEY.value,
+            APIInformation.UPBIT_SECRET_API_KEY.value,
         ),
     }
     backoff = 1
