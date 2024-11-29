@@ -1,0 +1,133 @@
+name: Create .env File
+description: Creates the .env file with the necessary environment variables
+inputs:
+  SSH_PRIVATE_KEY:
+    description: 'SSH Private Key'
+    required: true
+  SSH_HOST:
+    description: 'SSH Host'
+    required: true
+  SSH_USERNAME:
+    description: 'SSH Username'
+    required: true
+  DB_TYPE:
+    description: 'DB type'
+    required: true
+  ARTIFACT_ROOT:
+    description: ''
+    required: true
+  ARTIFACT_MODEL_REGISTRY_PATH:
+    description: ''
+    required: true
+
+  ENV:
+    description: ''
+    required: true
+  DB_USER:
+    description: ''
+    required: true
+  DB_PW:
+    description: ''
+    required: true
+  DB_HOST:
+    description: ''
+    required: true
+  DB_PORT:
+    description: ''
+    required: true
+  MLFLOW_S3_ENDPOINT_URL:
+    description: ''
+    required: true
+  MLFLOW_S3_ENDPOINT_MAIN_PORT:
+    description: ''
+    required: true
+  AWS_ACCESS_KEY_ID:
+    description: ''
+    required: true
+  AWS_SECRET_ACCESS_KEY:
+    description: ''
+    required: true
+  MLFLOW_TRACKING_URI:
+    description: ''
+    required: true
+  MLFLOW_TRACKING_PORT:
+    description: ''
+    required: true
+  MLFLOW_DB_HOST:
+    description: ''
+    required: true
+  MLFLOW_TRACKING_URI_LOCAL:
+    description: ''
+    required: true
+  MLFLOW_S3_ENDPOINT_SUB_PORT:
+    description: ''
+    required: true
+  MINIO_ROOT_USER:
+    description: ''
+    required: true
+  MINIO_ROOT_PASSWORD:
+    description: ''
+    required: true
+  REDIS_PORT:
+    description: ''
+    required: true
+  DB_DEFAULT_NAME:
+    description: ''
+    required: true
+  MLFLOW_SERVER_HOST:
+    description: ''
+    required: true
+  UVICORN_PORT:
+    description: ''
+    required: true
+  REDIS_HOST:
+    description: ''
+    required: true
+
+
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Create .env File on Remote Server
+      uses: appleboy/ssh-action@master
+      with:
+        key: ${{ inputs.ssh_private_key }}
+        host: ${{ inputs.ssh_host }}
+        username: ${{ inputs.ssh_username }}
+        script: |
+          echo "⭐️ .env 파일 설정 및 업데이트"
+          cd ${{ inputs.PROJECT_PATH }}/${{ inputs.REPOSITORY_NAME }}
+
+          if [ ! -f ".env" ]; then
+              touch .env
+          else
+              echo "✅ .env 파일이 이미 존재합니다."
+          fi
+          echo "DB_TYPE=${{ inputs.DB_TYPE }}" > .env
+          echo "ARTIFACT_ROOT=${{ inputs.ARTIFACT_ROOT }}" >> .env
+          echo "ARTIFACT_MODEL_REGISTRY_PATH=${{ inputs.ARTIFACT_MODEL_REGISTRY_PATH }}" >> .env
+          echo "ENV=${{ inputs.ENV }}" >> .env
+
+          echo "DB_USER=${{ inputs.DB_USER }}" >> .env
+          echo "DB_PW=${{ inputs.DB_PW }}" >> .env
+          echo "DB_HOST=${{ inputs.DB_HOST }}" >> .env
+          echo "DB_PORT=${{ inputs.DB_PORT }}" >> .env
+          echo "MLFLOW_S3_ENDPOINT_URL=${{ inputs.MLFLOW_S3_ENDPOINT_URL }}" >> .env
+          echo "MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ inputs.MLFLOW_S3_ENDPOINT_MAIN_PORT }}" >> .env
+          echo "AWS_ACCESS_KEY_ID=${{ inputs.AWS_ACCESS_KEY_ID }}" >> .env
+          echo "AWS_SECRET_ACCESS_KEY=${{ inputs.AWS_SECRET_ACCESS_KEY }}" >> .env
+          echo "MLFLOW_TRACKING_URI=${{ inputs.MLFLOW_TRACKING_URI }}" >> .env
+          echo "MLFLOW_TRACKING_PORT=${{ inputs.MLFLOW_TRACKING_PORT }}" >> .env
+          echo "MLFLOW_DB_HOST=${{ inputs.MLFLOW_DB_HOST }}" >> .env
+          echo "MLFLOW_TRACKING_URI_LOCAL=${{ inputs.MLFLOW_TRACKING_URI_LOCAL }}" >> .env
+          echo "MLFLOW_S3_ENDPOINT_SUB_PORT=${{ inputs.MLFLOW_S3_ENDPOINT_SUB_PORT }}" >> .env
+          echo "MINIO_ROOT_USER=${{ inputs.MINIO_ROOT_USER }}" >> .env
+          echo "MINIO_ROOT_PASSWORD=${{ inputs.MINIO_ROOT_PASSWORD }}" >> .env
+          echo "DB_DEFAULT_NAME=${{ inputs.DB_DEFAULT_NAME }}" >> .env
+          echo "MLFLOW_SERVER_HOST=${{ inputs.MLFLOW_SERVER_HOST }}" >> .env
+          echo "UVICORN_PORT=${{ inputs.UVICORN_PORT }}" >> .env
+          echo "REDIS_HOST=${{ inputs.REDIS_HOST }}" >> .env
+          echo "REDIS_PORT=${{ inputs.REDIS_PORT }}" >> .env
+
+          echo "⭐️ 환경 변수 업데이트 완료"
