@@ -262,6 +262,7 @@ jobs:
             echo "ARTIFACT_ROOT=${{ vars.ARTIFACT_ROOT }}" >> .env
             echo "ARTIFACT_MODEL_REGISTRY_PATH=${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}" >> .env
             echo "ENV=${{ vars.ENV }}" >> .env
+            echo "dohyung=${{ vars.dohyung }}" >> .env
 
             echo "DB_USER=${{ secrets.DB_USER }}" >> .env
             echo "DB_PW=${{ secrets.DB_PW }}" >> .env
@@ -283,7 +284,6 @@ jobs:
             echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
             echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
             echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
-            echo "TEST=${{ secrets.TEST }}" >> .env
 
             echo "⭐️ 환경 변수 업데이트 완료"
 
