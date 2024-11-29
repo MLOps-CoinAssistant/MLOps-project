@@ -246,6 +246,8 @@ jobs:
             ENV_FILE_PATH="./.env"
             BACKUP_FILE_PATH="./.env.backup"
 
+            cd $CURRENT_DIR/${{ vars.repository_name }}
+
             # .env 파일 백업이 없는 경우 백업 파일 생성
             if [ ! -f "$BACKUP_FILE_PATH" ]; then
                 echo "백업 파일이 존재하지 않습니다. 초기 백업 파일을 생성합니다."
@@ -254,7 +256,6 @@ jobs:
                 exit 0
             fi
 
-            cd $CURRENT_DIR/${{ vars.repository_name }}
             git pull origin develop
             echo "⭐️ 배포 완료"
             echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
