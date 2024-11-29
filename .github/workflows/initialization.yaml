@@ -155,6 +155,7 @@ jobs:
             fi
   deployment:
     runs-on: ubuntu-latest
+    needs: initialization
 
     steps:
       - name: Checkout Repository
