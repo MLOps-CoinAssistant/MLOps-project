@@ -118,7 +118,7 @@ jobs:
               sudo chmod 775 restart-airflow.sh
 
       - name: Create .env File
-        uses: ./create-env.yml
+        uses: .github/workflows/create-env.yml
         with:
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh_host: ${{ secrets.SSH_HOST }}
@@ -272,7 +272,7 @@ jobs:
             echo "⭐️ 배포 완료"
 
       - name: Create .env File
-        uses: ./create-env.yml
+        uses: .github/workflows/create-env.yml
         with:
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh_host: ${{ secrets.SSH_HOST }}
