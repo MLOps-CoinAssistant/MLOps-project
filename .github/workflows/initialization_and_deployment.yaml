@@ -160,8 +160,11 @@ jobs:
     needs: initialization
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
       - name: Create .env File
-        uses: ./.github/actions/create-env/action.yml
+        uses: ./.github/actions/create-env
         with:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
