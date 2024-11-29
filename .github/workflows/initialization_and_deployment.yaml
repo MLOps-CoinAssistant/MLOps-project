@@ -243,10 +243,8 @@ jobs:
             cd URRENT_DIR=$(pwd)
             echo "현재 위치: $(pwd)"
 
-            ENV_FILE_PATH="./.env"
-            BACKUP_FILE_PATH="./.env.backup"
-
-            cd $CURRENT_DIR/${{ vars.repository_name }}
+            ENV_FILE_PATH="$CURRENT_DIR/${{ vars.repository_name }}/.env"
+            BACKUP_FILE_PATH="$CURRENT_DIR/${{ vars.repository_name }}/.env.backup"
 
             # .env 파일 백업이 없는 경우 백업 파일 생성
             if [ ! -f "$BACKUP_FILE_PATH" ]; then
@@ -256,8 +254,10 @@ jobs:
                 exit 0
             fi
 
+            cd $CURRENT_DIR/${{ vars.repository_name }}
             git pull origin develop
             echo "⭐️ 배포 완료"
+
             echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
             echo "ARTIFACT_ROOT=${{ vars.ARTIFACT_ROOT }}" >> .env
             echo "ARTIFACT_MODEL_REGISTRY_PATH=${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}" >> .env
@@ -284,7 +284,6 @@ jobs:
             echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
             echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
             echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
-
             echo "⭐️ 환경 변수 업데이트 완료"
 
             if git diff --name-only HEAD~1 | grep -E 'compose.yaml'; then
