@@ -151,7 +151,6 @@ jobs:
               # echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
               # echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
               # echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
-
       - name: Initial Server Setup-II
         uses: appleboy/ssh-action@master
         with:
