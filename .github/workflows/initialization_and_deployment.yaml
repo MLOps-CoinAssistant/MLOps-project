@@ -261,7 +261,7 @@ jobs:
             echo "ARTIFACT_ROOT=${{ vars.ARTIFACT_ROOT }}" >> .env
             echo "ARTIFACT_MODEL_REGISTRY_PATH=${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}" >> .env
             echo "ENV=${{ vars.ENV }}" >> .env
-            echo "dohyung=${{ vars.dohyung }}" >> .env
+            echo "DOHYUNG=${{ vars.DOHYUNG }}" >> .env
 
             echo "DB_USER=${{ secrets.DB_USER }}" >> .env
             echo "DB_PW=${{ secrets.DB_PW }}" >> .env
