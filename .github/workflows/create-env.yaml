@@ -25,6 +25,9 @@ jobs:
           username: ${{ inputs.SSH_USERNAME }}
           script: |
             echo "⭐️ .env 파일 설정 및 업데이트"
+
+            cd ${{ vars.PROJECT_PATH }}/${{ vars.REPOSITORY_NAME }}
+
             if [ ! -f ".env" ]; then
                 touch .env
             else
