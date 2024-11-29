@@ -163,10 +163,10 @@ jobs:
       SSH_HOST: ${{ env.SSH_HOST }}
       SSH_USERNAME: ${{ env.SSH_USERNAME }}
       # vars 값들을 직접 입력하거나 env로 전달
-      DB_TYPE: ${{ env.DB_TYPE }}
-      ARTIFACT_ROOT: ${{ env.ARTIFACT_ROOT }}
-      ARTIFACT_MODEL_REGISTRY_PATH: ${{ env.ARTIFACT_MODEL_REGISTRY_PATH }}
-      ENV: ${{ env.ENV }}
+      DB_TYPE: ${{ vars.DB_TYPE }}
+      ARTIFACT_ROOT: ${{ vars.ARTIFACT_ROOT }}
+      ARTIFACT_MODEL_REGISTRY_PATH: ${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}
+      ENV: ${{ vars.ENV }}
     secrets:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       # secrets 값들을 전달
@@ -190,13 +190,7 @@ jobs:
       UVICORN_PORT: ${{ secrets.UVICORN_PORT }}
       REDIS_HOST: ${{ secrets.REDIS_HOST }}
       REDIS_PORT: ${{ secrets.REDIS_PORT }}
-    env:
-      SSH_HOST: ${{ secrets.SSH_HOST }}
-      SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-      DB_TYPE: ${{ vars.DB_TYPE }}
-      ARTIFACT_ROOT: ${{ vars.ARTIFACT_ROOT }}
-      ARTIFACT_MODEL_REGISTRY_PATH: ${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}
-      ENV: ${{ vars.ENV }}
+
                 # echo "⭐️ .env 파일 설정"
               # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
               # touch .env
