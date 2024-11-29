@@ -110,9 +110,23 @@ jobs:
               fi
               astro dev stop && astro dev kill
 
-              echo "⭐️ airflow plugins 폴더 권한 변경 완료"
+              echo "⭐️ airflow plugins 폴더 생성 및 권한 변경"
+              if [ ! -d "plugins" ]; then
+                mkdir plugins
+              fi
               sudo chown ubuntu plugins
               sudo chgrp ubuntu plugins
+
+              echo "⭐️ pre-commit 설정"
+              cat <<EOF > .pre-commit-config.yaml
+              # Sample pre-commit configuration
+              repos:
+              -   repo: https://github.com/pre-commit/pre-commit-hooks
+                  rev: v4.0.1
+                  hooks:
+                  - id: trailing-whitespace
+                  - id: end-of-file-fixer
+              EOF
             fi
 
   deployment:
