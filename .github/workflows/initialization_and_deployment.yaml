@@ -121,6 +121,10 @@ jobs:
               # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
               touch .env
               echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
+              echo "ARTIFACT_ROOT=${{ vars.ARTIFACT_ROOT }}" >> .env
+              echo "ARTIFACT_MODEL_REGISTRY_PATH=${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}" >> .env
+              echo "ENV=${{ vars.ENV }}" >> .env
+
               echo "DB_USER=${{ secrets.DB_USER }}" >> .env
               echo "DB_PW=${{ secrets.DB_PW }}" >> .env
               echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
@@ -132,6 +136,15 @@ jobs:
               echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
               echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
               echo "MLFLOW_DB_HOST=${{ secrets.MLFLOW_DB_HOST }}" >> .env
+              echo "MLFLOW_TRACKING_URI_LOCAL=${{ secrets.MLFLOW_TRACKING_URI_LOCAL }}" >> .env
+              echo "MLFLOW_S3_ENDPOINT_SUB_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_SUB_PORT }}" >> .env
+              echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" >> .env
+              echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env
+              echo "DB_DEFAULT_NAME=${{ secrets.DB_DEFAULT_NAME }}" >> .env
+              echo "MLFLOW_SERVER_HOST=${{ secrets.MLFLOW_SERVER_HOST }}" >> .env
+              echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
+              echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
+              echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
 
               echo "⭐️ Astronomer 개발 서버 초기화"
               astro dev start
@@ -234,8 +247,11 @@ jobs:
             cd $CURRENT_DIR/${{ vars.repository_name }}
             git pull origin develop
             echo "⭐️ 배포 완료"
-
             echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
+            echo "ARTIFACT_ROOT=${{ vars.ARTIFACT_ROOT }}" >> .env
+            echo "ARTIFACT_MODEL_REGISTRY_PATH=${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}" >> .env
+            echo "ENV=${{ vars.ENV }}" >> .env
+
             echo "DB_USER=${{ secrets.DB_USER }}" >> .env
             echo "DB_PW=${{ secrets.DB_PW }}" >> .env
             echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
@@ -247,6 +263,16 @@ jobs:
             echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
             echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
             echo "MLFLOW_DB_HOST=${{ secrets.MLFLOW_DB_HOST }}" >> .env
+            echo "MLFLOW_TRACKING_URI_LOCAL=${{ secrets.MLFLOW_TRACKING_URI_LOCAL }}" >> .env
+            echo "MLFLOW_S3_ENDPOINT_SUB_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_SUB_PORT }}" >> .env
+            echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" >> .env
+            echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env
+            echo "DB_DEFAULT_NAME=${{ secrets.DB_DEFAULT_NAME }}" >> .env
+            echo "MLFLOW_SERVER_HOST=${{ secrets.MLFLOW_SERVER_HOST }}" >> .env
+            echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
+            echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
+            echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
+
             echo "⭐️ 환경 변수 업데이트 완료"
 
             if git diff --name-only HEAD~1 | grep -E 'compose.yaml|.env'; then
