@@ -163,6 +163,30 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+      DB_TYPE: ${{ vars.DB_TYPE }}
+      ARTIFACT_ROOT: ${{ vars.ARTIFACT_ROOT }}
+      ARTIFACT_MODEL_REGISTRY_PATH: ${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}
+      ENV: ${{ vars.ENV }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PW: ${{ secrets.DB_PW }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      MLFLOW_S3_ENDPOINT_URL: ${{ secrets.MLFLOW_S3_ENDPOINT_URL }}
+      MLFLOW_S3_ENDPOINT_MAIN_PORT: ${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      MLFLOW_TRACKING_PORT: ${{ secrets.MLFLOW_TRACKING_PORT }}
+      MLFLOW_DB_HOST: ${{ secrets.MLFLOW_DB_HOST }}
+      MLFLOW_TRACKING_URI_LOCAL: ${{ secrets.MLFLOW_TRACKING_URI_LOCAL }}
+      MLFLOW_S3_ENDPOINT_SUB_PORT: ${{ secrets.MLFLOW_S3_ENDPOINT_SUB_PORT }}
+      MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+      MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+      DB_DEFAULT_NAME: ${{ secrets.DB_DEFAULT_NAME }}
+      MLFLOW_SERVER_HOST: ${{ secrets.MLFLOW_SERVER_HOST }}
+      UVICORN_PORT: ${{ secrets.UVICORN_PORT }}
+      REDIS_HOST: ${{ secrets.REDIS_HOST }}
+      REDIS_PORT: ${{ secrets.REDIS_PORT }}
                 # echo "⭐️ .env 파일 설정"
               # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
               # touch .env
