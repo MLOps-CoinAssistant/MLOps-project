@@ -167,6 +167,36 @@ jobs:
               fi
 
             fi
+
+  configure_airflow:
+    runs-on: ubuntu-latest
+    needs: initialization
+
+    steps:
+      - name: Configure Airflow Variables and Connections
+        uses: appleboy/ssh-action@master
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          script: |
+            echo "⭐️ Airflow Variables 추가"
+
+            airflow variables set UPBIT_ACCESS_API_KEY "${{ secrets.UPBIT_ACCESS_API_KEY }}"
+            airflow variables set UPBIT_SECRET_API_KEY "${{ secrets.UPBIT_SECRET_API_KEY }}"
+            airflow variables set OPENAI_API_KEY "${{ secrets.OPENAI_API_KEY }}"
+
+            echo "⭐️ Airflow Connection 추가"
+            airflow connections add 'postgres_default' \
+              --conn-type 'postgres' \
+              --conn-host "${{ secrets.DB_HOST }}" \
+              --conn-login "${{ secrets.DB_USER }}" \
+              --conn-password "${{ secrets.DB_PW }}" \
+              --conn-port "${{ secrets.DB_PORT }}" \
+              --conn-schema "${{ secrets.DB_USER }}"
+
+            echo "⭐️ Airflow 설정 완료"
+
   deployment:
     runs-on: ubuntu-latest
     needs: initialization
