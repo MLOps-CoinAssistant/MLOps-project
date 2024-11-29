@@ -2,5 +2,5 @@ from enum import Enum
 
 
 class Connections(Enum):
-    POSTGRES_DEFAULT = "postgres-default"
-    HYPERPARAMETER_STORE = "hyperparameter-store"
+    POSTGRES_DEFAULT = "POSTGRES_DEFAULT"
+    HYPERPARAMETER_STORE = "HYPERPARAMETER_STORE"

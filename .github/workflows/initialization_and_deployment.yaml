@@ -131,6 +131,7 @@ jobs:
               echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
               echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
               echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
+              echo "MLFLOW_DB_HOST=${{ MLFLOW_DB_HOST }}" >> .env
 
               echo "⭐️ Astronomer 개발 서버 초기화"
               astro dev start
@@ -190,7 +191,16 @@ jobs:
             airflow variables set OPENAI_API_KEY "${{ secrets.OPENAI_API_KEY }}"
 
             echo "⭐️ Airflow Connection 추가"
-            airflow connections add 'postgres_default' \
+            airflow connections add 'POSTGRES_DEFAULT' \
+              --conn-type 'postgres' \
+              --conn-host "${{ secrets.DB_HOST }}" \
+              --conn-login "${{ secrets.DB_USER }}" \
+              --conn-password "${{ secrets.DB_PW }}" \
+              --conn-port "${{ secrets.DB_PORT }}" \
+              --conn-schema "${{ secrets.DB_USER }}"
+            echo "✅ postgres_default 추가 완료"
+
+            airflow connections add 'HYPERPARAMETER_STORE' \
               --conn-type 'postgres' \
               --conn-host "${{ secrets.DB_HOST }}" \
               --conn-login "${{ secrets.DB_USER }}" \
