@@ -241,7 +241,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           script: |
             cd
-            URRENT_DIR=$(pwd)
+            CURRENT_DIR=$(pwd)
             echo "현재 위치: $(pwd)"
 
             ENV_FILE_PATH="$CURRENT_DIR/${{ vars.repository_name }}/.env"
