@@ -360,6 +360,7 @@ async def collect_and_load_data(db_uri: str, context: dict) -> None:
                             new_data_set = {tuple(item.items()) for item in result}
                             data.update(new_data_set)
 
+                    # TODO: error 부분
                     last_record_time = datetime.fromisoformat(
                         results[-1][0][-1]["candle_date_time_kst"]
                     )
