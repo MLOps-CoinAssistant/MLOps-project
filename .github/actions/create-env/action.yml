@@ -1,6 +1,12 @@
 name: Create .env File
 description: Creates the .env file with the necessary environment variables
 inputs:
+  PROJECT_PATH:
+      description: 'Project Path on the remote server'
+      required: true
+  REPOSITORY_NAME:
+    description: 'Name of the repository'
+    required: true
   SSH_PRIVATE_KEY:
     description: 'SSH Private Key'
     required: true

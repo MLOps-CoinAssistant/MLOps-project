@@ -166,6 +166,8 @@ jobs:
       - name: Create .env File
         uses: ./.github/actions/create-env
         with:
+          PROJECT_PATH: ${{ vars.PROJECT_PATH }}
+          REPOSITORY_NAME: ${{ vars.REPOSITORY_NAME }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
           DB_TYPE: ${{ vars.DB_TYPE }}
