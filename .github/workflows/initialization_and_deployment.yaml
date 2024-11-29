@@ -94,9 +94,9 @@ jobs:
               conda create -n fastapi python=3.11 -y
 
               echo "⭐️ Git 리포지토리 클론 및 환경 설정"
-              git clone git@github.com:MLOps-CoinAssistant/MLOps-project.git
+              git clone git@github.com:MLOps-CoinAssistant/${{ vars.REPOSITORY_NAME }}.git
               git clone git@github.com:MLOps-CoinAssistant/fastapi.git
-              cd MLOps-project
+              cd ${{ vars.REPOSITORY_NAME }}
               conda activate mlops-pipeline
               pip install pip==24.0
               pip install mlflow==1.27.0
@@ -116,6 +116,45 @@ jobs:
               export \$(grep -v '^#' .env | xargs)
               astro dev start --compose-file compose.yaml -e .env" > restart-airflow.sh
               sudo chmod 775 restart-airflow.sh
+
+              echo "⭐️ Astronomer 개발 서버 초기화"
+              astro dev start
+              if grep -q "address already in use"; then
+                echo "‼️ 포트 5432가 이미 사용 중입니다. Astro 프로세스를 종료합니다."
+                pkill astro
+                sudo systemctl stop postgresql
+                astro dev stop && astro dev kill
+              fi
+
+              cd ${{ vars.PROJECT_PATH }}/${{ vars.REPOSITORY_NAME }}
+
+              # airflow_settings.yaml 문제 해결
+              if [ -d "airflow_settings.yaml" ]; then
+                rm -rf airflow_settings.yaml
+              fi
+              if [ ! -f "airflow_settings.yaml" ]; then
+                touch airflow_settings.yaml
+              fi
+
+              echo "⭐️ Astronomer 재시작"
+              ./restart-airflow.sh
+
+              if [ -d "airflow_settings.yaml" ]; then
+                rm -rf airflow_settings.yaml
+              fi
+              if [ ! -f "airflow_settings.yaml" ]; then
+                touch airflow_settings.yaml
+              fi
+
+              if ! grep -q "Airflow is starting up!"; then
+                echo "⭐️ Astronomer 개발 서버 재시작"
+                ./restart-airflow.sh
+              fi
+              echo "⭐️ 설정 완료"
+              touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
+            else
+              echo "⭐️ Already Initialized"
+            fi
 
       - name: Create .env File
         uses: .github/workflows/create-env.yml
@@ -151,51 +190,6 @@ jobs:
               # echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
               # echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
               # echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
-      - name: Initial Server Setup-II
-        uses: appleboy/ssh-action@master
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          script: |
-              echo "⭐️ Astronomer 개발 서버 초기화"
-              astro dev start
-              if grep -q "address already in use"; then
-                echo "‼️ 포트 5432가 이미 사용 중입니다. Astro 프로세스를 종료합니다."
-                pkill astro
-                sudo systemctl stop postgresql
-                astro dev stop && astro dev kill
-              fi
-
-              cd ${{ vars.PROJECT_PATH }}/MLOps-project
-
-              # airflow_settings.yaml 문제 해결
-              if [ -d "airflow_settings.yaml" ]; then
-                rm -rf airflow_settings.yaml
-              fi
-              if [ ! -f "airflow_settings.yaml" ]; then
-                touch airflow_settings.yaml
-              fi
-
-              echo "⭐️ Astronomer 재시작"
-              ./restart-airflow.sh
-
-              if [ -d "airflow_settings.yaml" ]; then
-                rm -rf airflow_settings.yaml
-              fi
-              if [ ! -f "airflow_settings.yaml" ]; then
-                touch airflow_settings.yaml
-              fi
-
-              if ! grep -q "Airflow is starting up!"; then
-                echo "⭐️ Astronomer 개발 서버 재시작"
-                ./restart-airflow.sh
-              fi
-              echo "⭐️ 설정 완료"
-              touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
-            else
-              echo "⭐️ Already Initialized"
-            fi
 
   configure_airflow:
     runs-on: ubuntu-latest
