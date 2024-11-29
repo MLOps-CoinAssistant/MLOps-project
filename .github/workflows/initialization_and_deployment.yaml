@@ -131,7 +131,7 @@ jobs:
               echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
               echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
               echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
-              echo "MLFLOW_DB_HOST=${{ MLFLOW_DB_HOST }}" >> .env
+              echo "MLFLOW_DB_HOST=${{ secrets.MLFLOW_DB_HOST }}" >> .env
 
               echo "⭐️ Astronomer 개발 서버 초기화"
               astro dev start
