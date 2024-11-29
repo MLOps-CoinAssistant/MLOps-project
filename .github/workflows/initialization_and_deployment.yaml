@@ -244,6 +244,17 @@ jobs:
             CURRENT_DIR=$(pwd)
             echo "현재 위치: $(pwd)"
 
+            ENV_FILE_PATH="./.env"
+            BACKUP_FILE_PATH="./.env.backup"
+
+            # .env 파일 백업이 없는 경우 백업 파일 생성
+            if [ ! -f "$BACKUP_FILE_PATH" ]; then
+                echo "백업 파일이 존재하지 않습니다. 초기 백업 파일을 생성합니다."
+                cp "$ENV_FILE_PATH" "$BACKUP_FILE_PATH"
+                echo "초기 백업 파일 생성 완료."
+                exit 0
+            fi
+
             cd $CURRENT_DIR/${{ vars.repository_name }}
             git pull origin develop
             echo "⭐️ 배포 완료"
@@ -272,11 +283,26 @@ jobs:
             echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
             echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
             echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
+            echo "TEST=${{ secrets.TEST }}" >> .env
 
             echo "⭐️ 환경 변수 업데이트 완료"
 
-            if git diff --name-only HEAD~1 | grep -E 'compose.yaml|.env'; then
-              echo "⭐️ compose or .env 변동 감지됨"
+            if git diff --name-only HEAD~1 | grep -E 'compose.yaml'; then
+              echo "⭐️ compose.yaml 변동 감지됨"
               ./restart-airflow.sh
+            else
+              # .env 파일과 백업 파일 비교
+              if diff "$ENV_FILE_PATH" "$BACKUP_FILE_PATH" > /dev/null; then
+                  echo "✅ .env에 변경 사항이 없습니다."
+              else
+                  echo "✅ .env에 변경 사항이 감지되었습니다!"
+                  # 변경 사항을 반영하여 백업 파일 갱신
+                  cp "$ENV_FILE_PATH" "$BACKUP_FILE_PATH"
+
+                  echo "✅ Airflow를 재시작합니다..."
+                  # Airflow 재시작 스크립트 실행
+                  ./restart-airflow.sh
+              fi
             fi
+
             echo "⭐️ Airflow 재시작 완료"
