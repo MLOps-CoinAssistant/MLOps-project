@@ -26,6 +26,6 @@ jobs:
             CURRENT_DIR=$(pwd)
             cd $CURRENT_DIR/${{ vars.repository_name }}
             echo "현재 위치: $(pwd)"
-            git pull origin main
+            git pull origin develop
             echo "⭐️ 배포 완료"
             # 추가적인 배포 명령어들
