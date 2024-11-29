@@ -14,7 +14,7 @@ class APIInformation(Enum):
 
     UPBIT_ACCESS_API_KEY = Variable.get("UPBIT_ACCESS_API_KEY")
     UPBIT_SECRET_API_KEY = Variable.get("UPBIT_SECRET_API_KEY")
-    OPENAI_API_KEY = Variable.get("openai_api_key")
+    OPENAI_API_KEY = Variable.get("OPENAI_API_KEY")
 
 
 # URL 템플릿을 반환하는 함수 추가
