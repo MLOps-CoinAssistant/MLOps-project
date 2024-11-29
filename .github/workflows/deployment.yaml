@@ -1,0 +1,31 @@
+name: Deployment Workflow
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  deployment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Deploy Application
+        # env:
+        #   REPOSITORY_NAME: ${{ github.event.repository.name }}
+        uses: appleboy/ssh-action@master
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          script: |
+            cd
+            CURRENT_DIR=$(pwd)
+            cd $CURRENT_DIR/${{ vars.repository_name }}
+            echo "현재 위치: $(pwd)"
+            git pull origin main
+            echo "⭐️ 배포 완료"
+            # 추가적인 배포 명령어들
