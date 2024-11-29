@@ -234,7 +234,20 @@ jobs:
             cd $CURRENT_DIR/${{ vars.repository_name }}
             git pull origin develop
             echo "⭐️ 배포 완료"
-            # 추가적인 배포 명령어들
+
+            echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
+            echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+            echo "DB_PW=${{ secrets.DB_PW }}" >> .env
+            echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+            echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+            echo "MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}" >> .env
+            echo "MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}" >> .env
+            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
+            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+            echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
+            echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
+            echo "MLFLOW_DB_HOST=${{ secrets.MLFLOW_DB_HOST }}" >> .env
+            echo "⭐️ 환경 변수 업데이트 완료"
 
             if git diff --name-only HEAD~1 | grep -E 'compose.yaml|.env'; then
               echo "⭐️ compose or .env 변동 감지됨"
