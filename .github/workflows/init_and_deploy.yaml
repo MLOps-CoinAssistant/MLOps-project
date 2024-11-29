@@ -116,17 +116,6 @@ jobs:
               fi
               sudo chown ubuntu plugins
               sudo chgrp ubuntu plugins
-
-              echo "⭐️ pre-commit 설정"
-              cat <<EOF > .pre-commit-config.yaml
-              # Sample pre-commit configuration
-              repos:
-              -   repo: https://github.com/pre-commit/pre-commit-hooks
-                  rev: v4.0.1
-                  hooks:
-                  - id: trailing-whitespace
-                  - id: end-of-file-fixer
-              EOF
             fi
 
   deployment:
