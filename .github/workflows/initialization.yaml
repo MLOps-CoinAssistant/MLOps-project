@@ -29,17 +29,32 @@ jobs:
               sudo apt update && sudo apt -y upgrade
 
               echo "⭐️ PostgreSQL 설정"
-              sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-              wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+              sudo sh -c \
+                'echo "deb http://apt.postgresql.org/pub/repos/apt \
+                  $(lsb_release -cs)-pgdg main" \
+                > /etc/apt/sources.list.d/pgdg.list'
+              wget --quiet -O - \
+                https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+                sudo apt-key add -
               sudo apt-get update && sudo apt-get -y install postgresql-14
 
               echo "⭐️ 필요한 패키지 설치"
-              sudo apt-get -y install apt-transport-https ca-certificates curl gnupg-agent software-properties-common
+              sudo apt-get -y install \
+                apt-transport-https \
+                ca-certificates curl \
+                gnupg-agent \
+                software-properties-common
 
               echo "⭐️ Docker 설치"
-              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-              sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-              sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+                sudo apt-key add -
+              sudo add-apt-repository \
+                "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+                $(lsb_release -cs) stable"
+              sudo apt-get update && sudo apt-get install -y \
+                docker-ce \
+                docker-ce-cli \
+                containerd.io
               sudo usermod -aG docker ${{ secrets.SSH_USERNAME }}
               sudo chmod 666 /var/run/docker.sock
               sudo systemctl restart docker
@@ -49,7 +64,12 @@ jobs:
 
               echo "⭐️ SSH 키 생성 및 GitHub 등록"
               if [ ! -f ~/.ssh/id_rsa ]; then
-                ssh-keygen -t rsa -b 4096 -C "dohk325@gmail.com" -f ~/.ssh/id_rsa -N ""
+                ssh-keygen \
+                  -t rsa \
+                  -b 4096 \
+                  -C "dohk325@gmail.com" \
+                  -f ~/.ssh/id_rsa \
+                  -N ""
               fi
               ssh-keyscan github.com >> ~/.ssh/known_hosts
               PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
@@ -59,7 +79,8 @@ jobs:
                   https://api.github.com/user/keys
 
               echo "⭐️ Miniconda 설치"
-              wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O Miniconda3.sh
+              wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+                -O Miniconda3.sh
               bash Miniconda3.sh -b -p $HOME/miniconda
               echo "export PATH=\"$HOME/miniconda/bin:\$PATH\"" >> ~/.bashrc
               source ~/.bashrc
@@ -78,6 +99,8 @@ jobs:
               pip install mlflow==1.27.0
               pip install poetry
               pip install pre-commit
+              pip install yamllint
+              sudo apt install -y shellcheck
               conda deactivate
 
               echo "⭐️ Astronomer 설치"
@@ -130,28 +153,3 @@ jobs:
                 astro dev start --compose-file compose.yaml -e .env
 
             fi
-
-  # deployment:
-  #   runs-on: ubuntu-latest
-  #   needs: initialization
-
-  #   steps:
-  #     - name: Checkout Repository
-  #       uses: actions/checkout@v2
-
-  #     - name: Deploy Application
-  #       # env:
-  #       #   REPOSITORY_NAME: ${{ github.event.repository.name }}
-  #       uses: appleboy/ssh-action@master
-  #       with:
-  #         key: ${{ secrets.SSH_PRIVATE_KEY }}
-  #         host: ${{ secrets.SSH_HOST }}
-  #         username: ${{ secrets.SSH_USERNAME }}
-  #         script: |
-  #           cd
-  #           CURRENT_DIR=$(pwd)
-  #           cd $CURRENT_DIR/${{ vars.repository_name }}
-  #           echo "현재 위치: $(pwd)"
-  #           git pull origin main
-  #           echo "⭐️ 배포 완료"
-  #           # 추가적인 배포 명령어들
