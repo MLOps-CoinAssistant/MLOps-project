@@ -225,3 +225,10 @@ jobs:
             git pull origin develop
             echo "⭐️ 배포 완료"
             # 추가적인 배포 명령어들
+
+            if git diff --name-only HEAD~1 | grep -E 'compose.yaml|.env'; then
+              echo "⭐️ compose or .env 변동 감지됨"
+              astro dev stop
+              astro dev start -d
+            fi
+            echo "⭐️ Airflow 재시작 완료"
