@@ -101,12 +101,12 @@ jobs:
 
               echo "⭐️ Astronomer 개발 서버 시작"
               astro dev start
-              sleep 210 || true
               if grep -q "address already in use" astro_error.log; then
                 echo "‼️ 포트 5432가 이미 사용 중입니다. Astro 프로세스를 종료합니다."
                 pkill astro
                 sudo systemctl stop postgresql
-                astro dev start --compose-file compose.yaml
+                export $(grep -v '^#' .env | xargs)
+                astro dev start --compose-file compose.yaml -e .env
               fi
               astro dev stop && astro dev kill
 
@@ -118,27 +118,27 @@ jobs:
               sudo chgrp ubuntu plugins
             fi
 
-  deployment:
-    runs-on: ubuntu-latest
-    needs: initialization
+  # deployment:
+  #   runs-on: ubuntu-latest
+  #   needs: initialization
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+  #   steps:
+  #     - name: Checkout Repository
+  #       uses: actions/checkout@v2
 
-      - name: Deploy Application
-        # env:
-        #   REPOSITORY_NAME: ${{ github.event.repository.name }}
-        uses: appleboy/ssh-action@master
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          script: |
-            cd
-            CURRENT_DIR=$(pwd)
-            cd $CURRENT_DIR/${{ vars.repository_name }}
-            echo "현재 위치: $(pwd)"
-            git pull origin main
-            echo "⭐️ 배포 완료"
-            # 추가적인 배포 명령어들
+  #     - name: Deploy Application
+  #       # env:
+  #       #   REPOSITORY_NAME: ${{ github.event.repository.name }}
+  #       uses: appleboy/ssh-action@master
+  #       with:
+  #         key: ${{ secrets.SSH_PRIVATE_KEY }}
+  #         host: ${{ secrets.SSH_HOST }}
+  #         username: ${{ secrets.SSH_USERNAME }}
+  #         script: |
+  #           cd
+  #           CURRENT_DIR=$(pwd)
+  #           cd $CURRENT_DIR/${{ vars.repository_name }}
+  #           echo "현재 위치: $(pwd)"
+  #           git pull origin main
+  #           echo "⭐️ 배포 완료"
+  #           # 추가적인 배포 명령어들
