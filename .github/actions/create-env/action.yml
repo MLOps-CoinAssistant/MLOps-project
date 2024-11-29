@@ -1,6 +1,9 @@
 name: Create .env File
 description: Creates the .env file with the necessary environment variables
 inputs:
+  DOHYUNG:
+    description: ''
+    required: true
   PROJECT_PATH:
       description: 'Project Path on the remote server'
       required: true
@@ -135,5 +138,6 @@ runs:
           echo "UVICORN_PORT=${{ inputs.UVICORN_PORT }}" >> .env
           echo "REDIS_HOST=${{ inputs.REDIS_HOST }}" >> .env
           echo "REDIS_PORT=${{ inputs.REDIS_PORT }}" >> .env
+          echo "DOHYUNG=${{ vars.DOHYUNG }}" >> .env
 
           echo "⭐️ 환경 변수 업데이트 완료"
