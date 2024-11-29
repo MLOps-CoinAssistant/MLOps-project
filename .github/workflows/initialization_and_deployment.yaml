@@ -158,7 +158,7 @@ jobs:
 
   create_env:
     needs: initialization
-    uses: .github/workflows/create-env.yml
+    uses: .github/workflows/create-env.yml@develop
     with:
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       SSH_HOST: ${{ secrets.SSH_HOST }}
