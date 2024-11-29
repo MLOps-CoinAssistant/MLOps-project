@@ -165,7 +165,10 @@ jobs:
                 echo "⭐️ Astronomer 개발 서버 재시작"
                 ./restart-airflow.sh
               fi
-
+              echo "⭐️ 설정 완료"
+              touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
+            else
+              echo "⭐️ Already Initialized"
             fi
 
   configure_airflow:
