@@ -164,7 +164,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Create .env File
-        uses: .github/actions/create-env
+        uses: ./.github/actions/create-env
         with:
           PROJECT_PATH: ${{ vars.PROJECT_PATH }}
           REPOSITORY_NAME: ${{ vars.REPOSITORY_NAME }}

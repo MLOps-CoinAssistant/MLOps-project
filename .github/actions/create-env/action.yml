@@ -28,7 +28,6 @@ inputs:
   ARTIFACT_MODEL_REGISTRY_PATH:
     description: ''
     required: true
-
   ENV:
     description: ''
     required: true
@@ -92,7 +91,6 @@ inputs:
   REDIS_HOST:
     description: ''
     required: true
-
 
 
 runs:
