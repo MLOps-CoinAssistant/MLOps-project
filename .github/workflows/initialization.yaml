@@ -20,6 +20,8 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           script: |
+            export ANSIBLE_FORCE_COLOR=1
+            export DEBIAN_FRONTEND=noninteractive
             if [ ! -f /home/${{ secrets.SSH_USERNAME }}/.setup_done ]; then
               echo "⭐️ Git 설정"
               git config --global user.name "team JATH"
@@ -85,6 +87,7 @@ jobs:
               echo "export PATH=\"$HOME/miniconda/bin:\$PATH\"" >> ~/.bashrc
               source ~/.bashrc
               source $HOME/miniconda/etc/profile.d/conda.sh
+              rm Miniconda3.sh
 
               echo "⭐️ Conda 환경 생성"
               conda create -n mlops-pipeline python=3.11 -y
@@ -106,6 +109,13 @@ jobs:
               echo "⭐️ Astronomer 설치"
               curl -sSL install.astronomer.io | sudo bash -s -- v1.25.0
               echo 'n' | astro dev init
+
+              echo "⭐️ restart-airflow.sh 파일 생성 및 권한 설정"
+              echo "#!/bin/bash
+              astro dev stop && astro dev kill
+              export \$(grep -v '^#' .env | xargs)
+              astro dev start --compose-file compose.yaml -e .env" > restart-airflow.sh
+              sudo chmod 775 restart-airflow.sh
 
               echo "⭐️ .env 파일 설정"
               # GitHub Secrets에서 환경 변수를 가져와 .env 파일 생성
@@ -131,26 +141,29 @@ jobs:
                 astro dev stop && astro dev kill
               fi
 
-              echo "⭐️ airflow plugins 폴더 생성 및 권한 변경"
-              if [ ! -d "plugins" ]; then
-                mkdir plugins
+              cd ${{ vars.PROJECT_PATH }}/MLOps-project
+
+              # airflow_settings.yaml 문제 해결
+              if [ -d "airflow_settings.yaml" ]; then
+                rm -rf airflow_settings.yaml
               fi
-              sudo chown ubuntu plugins
-              sudo chgrp ubuntu plugins
+              if [ ! -f "airflow_settings.yaml" ]; then
+                touch airflow_settings.yaml
+              fi
 
-              echo "⭐️ Astronomer 개발 서버 시작:1"
-              export $(grep -v '^#' .env | xargs)
-              astro dev start --compose-file compose.yaml -e .env
+              echo "⭐️ Astronomer 재시작"
+              ./restart-airflow.sh
 
-              if grep -q "airflow_settings.yaml: is a directory"; then
-                  rm -rf ~/MLOps-project/airflow_settings.yaml
-                  touch ~/MLOps-project/airflow_settings.yaml
+              if [ -d "airflow_settings.yaml" ]; then
+                rm -rf airflow_settings.yaml
+              fi
+              if [ ! -f "airflow_settings.yaml" ]; then
+                touch airflow_settings.yaml
               fi
 
               if ! grep -q "Airflow is starting up!"; then
-                echo "⭐️ Astronomer 개발 서버 시작"
-                export $(grep -v '^#' .env | xargs)
-                astro dev start --compose-file compose.yaml -e .env
+                echo "⭐️ Astronomer 개발 서버 재시작"
+                ./restart-airflow.sh
               fi
 
             fi
