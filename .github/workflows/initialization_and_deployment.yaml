@@ -161,7 +161,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create .env File
-        uses: ./.github/actions/create-env
+        uses: ./.github/actions/create-env/action.yml
         with:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
