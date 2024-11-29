@@ -99,16 +99,14 @@ jobs:
               echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
               echo "MLFLOW_TRACKING_PORT=${{ secrets.MLFLOW_TRACKING_PORT }}" >> .env
 
-              echo "⭐️ Astronomer 개발 서버 시작"
+              echo "⭐️ Astronomer 개발 서버 초기화"
               astro dev start
               if grep -q "address already in use" astro_error.log; then
                 echo "‼️ 포트 5432가 이미 사용 중입니다. Astro 프로세스를 종료합니다."
                 pkill astro
                 sudo systemctl stop postgresql
-                export $(grep -v '^#' .env | xargs)
-                astro dev start --compose-file compose.yaml -e .env
+                astro dev stop && astro dev kill
               fi
-              astro dev stop && astro dev kill
 
               echo "⭐️ airflow plugins 폴더 생성 및 권한 변경"
               if [ ! -d "plugins" ]; then
@@ -116,6 +114,20 @@ jobs:
               fi
               sudo chown ubuntu plugins
               sudo chgrp ubuntu plugins
+
+              echo "⭐️ Astronomer 개발 서버 시작:1"
+              export $(grep -v '^#' .env | xargs)
+              astro dev start --compose-file compose.yaml -e .env
+
+              if grep -q "airflow_settings.yaml: is a directory"; then
+                  rm -rf ~/MLOps-project/airflow_settings.yaml
+                  touch ~/MLOps-project/airflow_settings.yaml
+              fi
+
+              echo "⭐️ Astronomer 개발 서버 시작:2"
+              export $(grep -v '^#' .env | xargs)
+              astro dev start --compose-file compose.yaml -e .env
+
             fi
 
   # deployment:
