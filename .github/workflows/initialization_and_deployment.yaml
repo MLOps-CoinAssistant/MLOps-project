@@ -97,13 +97,17 @@ jobs:
               git clone git@github.com:MLOps-CoinAssistant/${{ vars.REPOSITORY_NAME }}.git
               git clone git@github.com:MLOps-CoinAssistant/fastapi.git
               cd ${{ vars.REPOSITORY_NAME }}
+              conda init
               conda activate mlops-pipeline
               pip install pip==24.0
               pip install mlflow==1.27.0
-              pip install poetry
-              pip install pre-commit
-              pip install yamllint
+              pip install poetry==1.5.1
+              pip install pre-commit==3.3.3
+              pip install yamllint==1.32.0
               sudo apt install -y shellcheck
+              pip install "apache-airflow==2.7.2" \
+                --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.2/constraints-3.11.txt"
+              
               conda deactivate
 
               echo "⭐️ Astronomer 설치"
@@ -139,17 +143,11 @@ jobs:
               echo "⭐️ Astronomer 재시작"
               ./restart-airflow.sh
 
-              if [ -d "airflow_settings.yaml" ]; then
-                rm -rf airflow_settings.yaml
-              fi
-              if [ ! -f "airflow_settings.yaml" ]; then
-                touch airflow_settings.yaml
-              fi
-
-              if ! grep -q "Airflow is starting up!"; then
-                echo "⭐️ Astronomer 개발 서버 재시작"
-                ./restart-airflow.sh
-              fi
+              # if ! grep -q "Airflow is starting up!"; then
+              #   echo "⭐️ Astronomer 개발 서버 재시작"
+              #   ./restart-airflow.sh
+              # fi
+              
               echo "⭐️ 설정 완료"
               touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
             else
@@ -210,6 +208,8 @@ jobs:
           script: |
             echo "⭐️ Airflow Variables 추가"
 
+            airflow db init
+            
             airflow variables set UPBIT_ACCESS_API_KEY "${{ secrets.UPBIT_ACCESS_API_KEY }}"
             airflow variables set UPBIT_SECRET_API_KEY "${{ secrets.UPBIT_SECRET_API_KEY }}"
             airflow variables set OPENAI_API_KEY "${{ secrets.OPENAI_API_KEY }}"
