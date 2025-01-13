@@ -210,12 +210,13 @@ jobs:
 
             airflow db init
             
-            airflow variables set UPBIT_ACCESS_API_KEY "${{ secrets.UPBIT_ACCESS_API_KEY }}"
-            airflow variables set UPBIT_SECRET_API_KEY "${{ secrets.UPBIT_SECRET_API_KEY }}"
-            airflow variables set OPENAI_API_KEY "${{ secrets.OPENAI_API_KEY }}"
+            docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set UPBIT_ACCESS_API_KEY "${{ secrets.UPBIT_ACCESS_API_KEY }}"
+            docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set UPBIT_SECRET_API_KEY "${{ secrets.UPBIT_SECRET_API_KEY }}"
+            docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set OPENAI_API_KEY "${{ secrets.OPENAI_API_KEY }}"
+            docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set email_addr "${{ secrets.EMAIL_ADDR }}"
 
             echo "⭐️ Airflow Connection 추가"
-            airflow connections add 'POSTGRES_DEFAULT' \
+            docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow connections add 'POSTGRES_DEFAULT' \
               --conn-type 'postgres' \
               --conn-host "${{ secrets.DB_HOST }}" \
               --conn-login "${{ secrets.DB_USER }}" \
@@ -224,7 +225,7 @@ jobs:
               --conn-schema "${{ secrets.DB_USER }}"
             echo "✅ postgres_default 추가 완료"
 
-            airflow connections add 'HYPERPARAMETER_STORE' \
+            docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow connections add 'HYPERPARAMETER_STORE' \
               --conn-type 'postgres' \
               --conn-host "${{ secrets.DB_HOST }}" \
               --conn-login "${{ secrets.DB_USER }}" \
