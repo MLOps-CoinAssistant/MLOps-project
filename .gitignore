@@ -16,3 +16,4 @@ airflow.db
 .ipynb_checkpoints/
 *.ipynb
 catboost_info
+mlruns
