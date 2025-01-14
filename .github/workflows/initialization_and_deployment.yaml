@@ -180,17 +180,6 @@ jobs:
           echo "SSH Output: ${{ steps.check_env.outputs.output }}"
           echo "ENV_EXISTS: ${{ steps.set_status.outputs.ENV_EXISTS }}"
 
-      - name: Set directory permissions
-        uses: appleboy/ssh-action@master
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          script: |
-            echo "⭐️ Setting directory permissions"
-            cd /home/${{ secrets.SSH_USERNAME }}/MLOps-project
-            sudo chown -R ${{ secrets.SSH_USERNAME }}:${{ secrets.SSH_USERNAME }} .
-            sudo chmod -R 775 .
         env:
           PROJECT_PATH: "/home/${{ secrets.SSH_USERNAME }}"
           REPOSITORY_NAME: "MLOps-project"
