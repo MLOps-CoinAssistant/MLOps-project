@@ -8,10 +8,10 @@ services:
       dockerfile: Dockerfile-mlflow
     container_name: mlflow-server
     ports:
-      - ${MLFLOW_TRACKING_PORT}:${MLFLOW_TRACKING_PORT}
+      - ${MLFLOW_TRACKING_EXTERNAL_PORT}:${MLFLOW_TRACKING_INTERNAL_PORT}
     environment:
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}:${MLFLOW_S3_ENDPOINT_MAIN_PORT}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -25,6 +25,7 @@ services:
           --backend-store-uri ${DB_TYPE}://${DB_USER}:${DB_PW}@${MLFLOW_DB_HOST} \
           --default-artifact-root ${ARTIFACT_ROOT} \
           --host ${MLFLOW_SERVER_HOST}
+# --port ${MLFLOW_TRACKING_EXTERNAL_PORT}
 
   # artifact-store:
   #   image: minio/minio:RELEASE.2024-04-06T05-26-02Z

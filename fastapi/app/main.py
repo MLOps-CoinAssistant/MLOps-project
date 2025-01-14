@@ -86,7 +86,7 @@ async def healthcheck_mlflow():
     ) as session:
         try:
             async with session.get(
-                f"{config.MLFLOW_TRACKING_URI_LOCAL}:{config.MLFLOW_TRACKING_PORT}"
+                f"{config.MLFLOW_TRACKING_URI_LOCAL}:{config.MLFLOW_TRACKING_EXTERNAL_PORT}"
             ) as response:
                 if response.status == 200:
                     return {"status": "MLflow is healthy"}

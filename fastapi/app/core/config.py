@@ -59,7 +59,7 @@ class Config(BaseSettings):
     MLFLOW_TRACKING_URI_LOCAL: str = os.getenv(
         "MLFLOW_TRACKING_URI_CLOUD_RUN", "http://localhost"
     )
-    MLFLOW_TRACKING_PORT: str = os.getenv("MLFLOW_TRACKING_PORT", "5000")
+    MLFLOW_TRACKING_EXTERNAL_PORT: str = os.getenv("MLFLOW_TRACKING_EXTERNAL_PORT", "5001")
 
     @property
     def fastapi_kwargs(self) -> Dict[str, Any]:

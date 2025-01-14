@@ -55,7 +55,10 @@ inputs:
   MLFLOW_TRACKING_URI:
     description: ''
     required: true
-  MLFLOW_TRACKING_PORT:
+  MLFLOW_TRACKING_INTERNAL_PORT:
+    description: ''
+    required: true
+  MLFLOW_TRACKING_EXTERNAL_PORT:
     description: ''
     required: true
   MLFLOW_DB_HOST:
@@ -122,7 +125,8 @@ runs:
           echo "AWS_ACCESS_KEY_ID=${{ inputs.AWS_ACCESS_KEY_ID }}" >> .env
           echo "AWS_SECRET_ACCESS_KEY=${{ inputs.AWS_SECRET_ACCESS_KEY }}" >> .env
           echo "MLFLOW_TRACKING_URI=${{ inputs.MLFLOW_TRACKING_URI }}" >> .env
-          echo "MLFLOW_TRACKING_PORT=${{ inputs.MLFLOW_TRACKING_PORT }}" >> .env
+          echo "MLFLOW_TRACKING_EXTERNAL_PORT=${{ inputs.MLFLOW_TRACKING_EXTERNAL_PORT }}" >> .env
+          echo "MLFLOW_TRACKING_INTERNAL_PORT=${{ inputs.MLFLOW_TRACKING_INTERNAL_PORT }}" >> .env
           echo "MLFLOW_DB_HOST=${{ inputs.MLFLOW_DB_HOST }}" >> .env
           echo "MLFLOW_TRACKING_URI_LOCAL=${{ inputs.MLFLOW_TRACKING_URI_LOCAL }}" >> .env
           echo "MLFLOW_S3_ENDPOINT_SUB_PORT=${{ inputs.MLFLOW_S3_ENDPOINT_SUB_PORT }}" >> .env
