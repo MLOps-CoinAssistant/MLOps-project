@@ -42,9 +42,15 @@
 
 ### GCP
 - [development] Compute Engine / Airflow를 위한 인스턴스
-- [development] Compute Engine / MinIO를 위한 인스턴스
+    - mlflow-db-host(MinIO) 서버의 SSH public key 입력
+    - 로컬 머신의 SSH public key 입력
+- [development] Compute Engine / mlflow-db-host(MinIO)를 위한 인스턴스
+    - Airflow 서버의 SSH public key 입력
+    - 로컬 머신의 SSH public key 입력
 - [development] CloudSQL / Airflow를 위한 default DB
 - [development] CloudSQL / Hyperparameter Store를 위한 default DB
+- GCP 무료 크레딧 이용 시, origin(source) 인스턴스 -> target 인스턴스로 워크플로우가 동작하도록 구성
+    - 이 경우, **레포지토리에서 Secret 부분의 SSH_HOST에 target 인스턴스의 IP 적용**
 
 ### 설치 및 실행
 
@@ -96,6 +102,14 @@ UVICORN_PORT=8000
 REDIS_HOST=
 REDIS_PORT=
 ```
+
+#### Github repository/Secrets and Variables/Actions
+- Compute Engine 인스턴스 또는 CloudSQL 구성에 변화가 있을 시, 다음의 변수들을 수정한다.
+    - DB_PW
+    - DB_HOST
+    - MLFLOW_S3_ENDPOINT_URL
+    - MLFLOW_DB_HOST
+
 
 3. 서비스 실행
 ```bash
