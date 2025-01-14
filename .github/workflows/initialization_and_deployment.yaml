@@ -118,13 +118,6 @@ jobs:
               curl -sSL install.astronomer.io | sudo bash -s -- v1.25.0
               echo 'n' | astro dev init
 
-              echo "⭐️ restart-airflow.sh 파일 생성 및 권한 설정"
-              echo "#!/bin/bash
-              astro dev stop && astro dev kill
-              export \$(grep -v '^#' .env | xargs)
-              astro dev start --compose-file compose.yaml -e .env" > restart-airflow.sh
-              sudo chmod 775 restart-airflow.sh
-
               echo "⭐️ Astronomer 개발 서버 초기화"
               timeout 300 astro dev start || true 
               if netstat -tuln | grep -q ':5432'; then
@@ -144,14 +137,6 @@ jobs:
               if [ ! -f "airflow_settings.yaml" ]; then
                 touch airflow_settings.yaml
               fi
-
-              echo "⭐️ Astronomer 재시작"
-              ./restart-airflow.sh
-
-              # if ! grep -q "Airflow is starting up!"; then
-              #   echo "⭐️ Astronomer 개발 서버 재시작"
-              #   ./restart-airflow.sh
-              # fi
               
               echo "⭐️ 설정 완료"
               touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
@@ -166,7 +151,24 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
+      - name: Check if .env exists
+        id: check_env
+        uses: appleboy/ssh-action@master
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          script: |
+            if [ -f "/home/${{ secrets.SSH_USERNAME }}/MLOps-project/.env" ]; then
+              echo "⭐️ .env file already exists"
+              exit 0
+            else
+              echo "⭐️ .env file does not exist"
+              exit 1
+            fi
+
       - name: Create .env File
+        if: ${{ failure() }}  # 이전 단계가 실패했을 때만 실행 (즉, .env 파일이 없을 때)
         uses: ./.github/actions/create-env
         with:
           PROJECT_PATH: ${{ vars.PROJECT_PATH }}
@@ -277,7 +279,7 @@ jobs:
 
             if git diff --name-only HEAD~1 | grep -E 'compose.yaml'; then
               echo "⭐️ compose.yaml 변동 감지됨"
-              ./restart-airflow.sh
+              ./restart-services.sh
             fi
 
             # .env 파일과 백업 파일 비교
@@ -290,7 +292,7 @@ jobs:
 
                 echo "✅ Airflow를 재시작합니다..."
                 # Airflow 재시작 스크립트 실행
-                ./restart-airflow.sh
+                ./restart-services.sh
             fi
 
             echo "⭐️ Airflow 재시작 완료"
