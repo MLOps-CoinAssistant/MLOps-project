@@ -126,12 +126,13 @@ jobs:
               sudo chmod 775 restart-airflow.sh
 
               echo "⭐️ Astronomer 개발 서버 초기화"
-              astro dev start
-              if grep -q "address already in use"; then
-                echo "‼️ 포트 5432가 이미 사용 중입니다. Astro 프로세스를 종료합니다."
-                pkill astro
-                sudo systemctl stop postgresql
-                astro dev stop && astro dev kill
+              timeout 300 astro dev start || true 
+              if netstat -tuln | grep -q ':5432'; then
+                echo "‼️ 포트 5432가 이미 사용 중입니다. 프로세스를 종료합니다."
+                sudo systemctl stop postgresql || true
+                pkill astro || true
+                astro dev stop || true
+                astro dev kill || true
               fi
 
               cd ${{ vars.PROJECT_PATH }}/${{ vars.REPOSITORY_NAME }}
