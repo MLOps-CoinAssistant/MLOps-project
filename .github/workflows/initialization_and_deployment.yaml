@@ -69,7 +69,7 @@ jobs:
                 ssh-keygen \
                   -t rsa \
                   -b 4096 \
-                  -C "dohk325@gmail.com" \
+                  -C "ubuntu" \
                   -f ~/.ssh/id_rsa \
                   -N ""
               fi
