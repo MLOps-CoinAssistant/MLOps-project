@@ -137,7 +137,6 @@ jobs:
               if [ ! -f "airflow_settings.yaml" ]; then
                 touch airflow_settings.yaml
               fi
-              
               echo "⭐️ 설정 완료"
               touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
             else
@@ -160,15 +159,15 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           script: |
             if [ -f "/home/${{ secrets.SSH_USERNAME }}/MLOps-project/.env" ]; then
+              echo "::set-output name=env_exists::true"
               echo "⭐️ .env file already exists"
-              exit 0
             else
+              echo "::set-output name=env_exists::false"
               echo "⭐️ .env file does not exist"
-              exit 1
             fi
 
       - name: Create .env File
-        if: ${{ failure() }}  # 이전 단계가 실패했을 때만 실행 (즉, .env 파일이 없을 때)
+        if: steps.check_env.outputs.env_exists == 'false'
         uses: ./.github/actions/create-env
         with:
           PROJECT_PATH: ${{ vars.PROJECT_PATH }}
