@@ -35,7 +35,9 @@ fi
 conda deactivate
 
 # Astro Dev 서비스 중지
-astro dev kill
+if docker ps -a | grep -q ml-ops-proj; then
+    astro dev stop && astro dev kill
+fi
 
 # Docker Compose로 mlflow 서비스 중지
 docker-compose -f mlflow-compose.yaml down

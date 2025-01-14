@@ -13,37 +13,43 @@ set +a
 
 # Conda 초기화
 eval "$(conda shell.bash hook)"
+source ~/.bashrc
+
+# 사용할 conda 환경 이름
+ENV_NAME="mlops-pipeline"
 
 # 현재 conda 환경 확인
-CURRENT_ENV=$(conda info --envs | grep '*' | awk '{print $1}')
-if [ "$CURRENT_ENV" != "MLOps-project" ]; then
-    if conda env list | grep -q "MLOps-project"; then
-        conda activate MLOps-project
-    else
-        conda create -n MLOps-project python=3.11 -y
-        conda activate MLOps-project
-    fi
+if ! conda env list | grep -q "$ENV_NAME"; then
+    echo "Creating new conda environment: $ENV_NAME"
+    conda create -n "$ENV_NAME" python=3.11 -y
 fi
+
+# Conda 환경 활성화
+echo "Activating conda environment: $ENV_NAME"
+conda activate "$ENV_NAME"
 
 # mlflow 서비스가 이미 실행 중인지 확인
 if ! docker ps -a | grep -q mlflow; then
+    echo "Starting MLflow service..."
     docker-compose -f mlflow-compose.yaml up -d
 fi
 
 # ml-ops-proj 서비스가 이미 실행 중인지 확인
 if ! docker ps -a | grep -q ml-ops-proj; then
+    echo "Starting Airflow service..."
     export $(grep -v '^#' .env | xargs)
     astro dev start --compose-file compose.yaml -e .env
 fi
 
 # backend 서비스가 이미 실행 중인지 확인
-if ! ps -a | grep -q fastapi && ! ps -a | grep -q uvicorn; then
-    ./run-local-backend.sh &
-fi
+# if ! ps -a | grep -q fastapi && ! ps -a | grep -q uvicorn; then
+#     ./run-local-backend.sh &
+# fi
 
 # Docker 상태 확인
+echo "Current Docker containers:"
 docker ps -a
 
 # Astro Dev 로그 확인
-astro dev logs --webserver &
-astro dev logs --scheduler &
+# astro dev logs --webserver &
+# astro dev logs --scheduler &
