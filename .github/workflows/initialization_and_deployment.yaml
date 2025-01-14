@@ -192,14 +192,14 @@ jobs:
         if: steps.set_status.outputs.ENV_EXISTS == 'false'
         uses: ./.github/actions/create-env
         with:
-          # PROJECT_PATH: ${{ vars.PROJECT_PATH }}
-          # REPOSITORY_NAME: ${{ vars.REPOSITORY_NAME }}
+          PROJECT_PATH: ${{ env.PROJECT_PATH }}
+          REPOSITORY_NAME: ${{ env.REPOSITORY_NAME }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          # DB_TYPE: ${{ vars.DB_TYPE }}
-          # ARTIFACT_ROOT: ${{ vars.ARTIFACT_ROOT }}
-          # ARTIFACT_MODEL_REGISTRY_PATH: ${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}
-          # ENV: ${{ vars.ENV }}
+          DB_TYPE: ${{ env.DB_TYPE }}
+          ARTIFACT_ROOT: ${{ env.ARTIFACT_ROOT }}
+          ARTIFACT_MODEL_REGISTRY_PATH: ${{ env.ARTIFACT_MODEL_REGISTRY_PATH }}
+          ENV: ${{ env.ENV }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PW: ${{ secrets.DB_PW }}
