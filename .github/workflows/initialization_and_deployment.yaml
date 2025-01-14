@@ -159,15 +159,19 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           script: |
             if [ -f "/home/${{ secrets.SSH_USERNAME }}/MLOps-project/.env" ]; then
-              echo "::set-output name=env_exists::true"
+              echo "ENV_EXISTS=true" >> $GITHUB_OUTPUT
               echo "⭐️ .env file already exists"
             else
-              echo "::set-output name=env_exists::false"
+              echo "ENV_EXISTS=false" >> $GITHUB_OUTPUT
               echo "⭐️ .env file does not exist"
             fi
 
+      - name: Debug Output
+        run: |
+          echo "ENV_EXISTS: ${{ steps.check_env.outputs.ENV_EXISTS }}"
+
       - name: Create .env File
-        if: steps.check_env.outputs.env_exists == 'false'
+        if: steps.check_env.outputs.ENV_EXISTS == 'false'
         uses: ./.github/actions/create-env
         with:
           PROJECT_PATH: ${{ vars.PROJECT_PATH }}
@@ -261,8 +265,8 @@ jobs:
             CURRENT_DIR=$(pwd)
             echo "현재 위치: $(pwd)"
 
-            ENV_FILE_PATH="$CURRENT_DIR/${{ vars.repository_name }}/.env"
-            BACKUP_FILE_PATH="$CURRENT_DIR/${{ vars.repository_name }}/.env.backup"
+            ENV_FILE_PATH="$CURRENT_DIR/${{ vars.REPOSITORY_NAME }}/.env"
+            BACKUP_FILE_PATH="$CURRENT_DIR/${{ vars.REPOSITORY_NAME }}/.env.backup"
 
             # .env 파일 백업이 없는 경우 백업 파일 생성
             if [ ! -f "$BACKUP_FILE_PATH" ]; then
@@ -272,7 +276,7 @@ jobs:
                 exit 0
             fi
 
-            cd $CURRENT_DIR/${{ vars.repository_name }}
+            cd $CURRENT_DIR/${{ vars.REPOSITORY_NAME }}
             git pull origin develop
             echo "⭐️ 배포 완료"
 
