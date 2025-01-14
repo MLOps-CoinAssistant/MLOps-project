@@ -169,7 +169,7 @@ jobs:
       - name: Set env exists status
         id: set_status
         run: |
-          if [[ "${{ steps.check_env.outputs.output }}" == *"exists"* ]]; then
+          if [[ "${{ steps.check_env.outputs.output }}" == *"already exists"* ]]; then
             echo "ENV_EXISTS=true" >> $GITHUB_OUTPUT
           else
             echo "ENV_EXISTS=false" >> $GITHUB_OUTPUT
@@ -181,7 +181,7 @@ jobs:
           echo "ENV_EXISTS: ${{ steps.set_status.outputs.ENV_EXISTS }}"
 
       - name: Create .env File
-        if: steps.check_env.outputs.ENV_EXISTS == 'false'
+        if: steps.set_status.outputs.ENV_EXISTS == 'false'
         uses: ./.github/actions/create-env
         with:
           PROJECT_PATH: ${{ vars.PROJECT_PATH }}
