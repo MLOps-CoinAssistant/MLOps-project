@@ -159,15 +159,28 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           script: |
             if [ -f "/home/${{ secrets.SSH_USERNAME }}/MLOps-project/.env" ]; then
-              echo "ENV_EXISTS=true" >> $GITHUB_OUTPUT
+              echo "RESULT=exists"
               echo "⭐️ .env file already exists"
             else
-              echo "ENV_EXISTS=false" >> $GITHUB_OUTPUT
+              "RESULT=not_exists"
               echo "⭐️ .env file does not exist"
             fi
+          script_result: true
+          envs: RESULT
+
+      - name: Set env exists status
+        id: set_status
+        run: |
+          if grep -q "RESULT=exists" script_result.txt; then
+            echo "ENV_EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "ENV_EXISTS=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Debug Output
         run: |
+          echo "Script result:"
+          cat script_result.txt
           echo "ENV_EXISTS: ${{ steps.check_env.outputs.ENV_EXISTS }}"
 
       - name: Create .env File
