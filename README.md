@@ -1,49 +1,134 @@
-Overview
-========
-test
+# BTC 가격 예측 MLOps 프로젝트
 
-Welcome to Astronomer! This project was generated after you ran 'astro dev init' using the Astronomer CLI. This readme describes the contents of the project, as well as how to run Apache Airflow on your local machine.
+비트코인(BTC) 가격을 예측하기 위한 MLOps 파이프라인을 구축한 프로젝트입니다.
 
-Project Contents
-================
+## 프로젝트 개요
 
-Your Astro project contains the following files and folders:
+이 프로젝트는 MLOps 기술을 활용하여 비트코인 가격을 예측하는 시스템을 구축합니다. 실시간으로 수집되는 비트코인 가격 데이터를 기반으로 머신러닝 모델을 학습하고, 예측 결과를 제공합니다.
 
-- dags: This folder contains the Python files for your Airflow DAGs. By default, this directory includes one example DAG:
-    - `example_astronauts`: This DAG shows a simple ETL pipeline example that queries the list of astronauts currently in space from the Open Notify API and prints a statement for each astronaut. The DAG uses the TaskFlow API to define tasks in Python, and dynamic task mapping to dynamically print a statement for each astronaut. For more on how this DAG works, see our [Getting started tutorial](https://docs.astronomer.io/learn/get-started-with-airflow).
-- Dockerfile: This file contains a versioned Astro Runtime Docker image that provides a differentiated Airflow experience. If you want to execute other commands or overrides at runtime, specify them here.
-- include: This folder contains any additional files that you want to include as part of your project. It is empty by default.
-- packages.txt: Install OS-level packages needed for your project by adding them to this file. It is empty by default.
-- requirements.txt: Install Python packages needed for your project by adding them to this file. It is empty by default.
-- plugins: Add custom or community plugins for your project to this file. It is empty by default.
-- airflow_settings.yaml: Use this local-only file to specify Airflow Connections, Variables, and Pools instead of entering them in the Airflow UI as you develop DAGs in this project.
+### 사용 기술
 
-Deploy Your Project Locally
-===========================
+- **Airflow**: 데이터 파이프라인 및 모델 학습 자동화
+- **MLflow**: 모델 버전 관리 및 실험 추적
+- **MinIO**: 모델 아티팩트 저장소
+- **FastAPI**: 예측 서비스 API 제공
+- **PostgreSQL**: 데이터 저장소
+- **Redis**: 캐시 서버
+- **Docker**: 컨테이너화 및 서비스 배포
+- **Github Actions**: CI/CD 파이프라인
 
-1. Start Airflow on your local machine by running 'astro dev start'.
+## 시스템 아키텍처
 
-This command will spin up 4 Docker containers on your machine, each for a different Airflow component:
+1. **데이터 수집 및 전처리**
+   - Airflow DAG을 이용한 Upbit API 데이터 수집
+   - 수집된 데이터 전처리 및 Feature Engineering
 
-- Postgres: Airflow's Metadata Database
-- Webserver: The Airflow component responsible for rendering the Airflow UI
-- Scheduler: The Airflow component responsible for monitoring and triggering tasks
-- Triggerer: The Airflow component responsible for triggering deferred tasks
+2. **모델 학습 및 관리**
+   - MLflow를 이용한 모델 실험 관리
+   - MinIO에 모델 아티팩트 저장
+   - 자동화된 모델 재학습 파이프라인
 
-2. Verify that all 4 Docker containers were created by running 'docker ps'.
+3. **예측 서비스**
+   - FastAPI 기반 REST API 제공
+   - 실시간 예측 및 모델 설명 기능
+   - Redis를 통한 예측 결과 캐싱
 
-Note: Running 'astro dev start' will start your project with the Airflow Webserver exposed at port 8080 and Postgres exposed at port 5432. If you already have either of those ports allocated, you can either [stop your existing Docker containers or change the port](https://docs.astronomer.io/astro/test-and-troubleshoot-locally#ports-are-not-available).
+## 시작하기
 
-3. Access the Airflow UI for your local Airflow project. To do so, go to http://localhost:8080/ and log in with 'admin' for both your Username and Password.
+### 필수 요구사항
 
-You should also be able to access your Postgres Database at 'localhost:5432/postgres'.
+- Docker 및 Docker Compose
+- Python 3.11+
 
-Deploy Your Project to Astronomer
-=================================
+### GCP
+- [development] Compute Engine / Airflow를 위한 인스턴스
+- [development] Compute Engine / MinIO를 위한 인스턴스
+- [development] CloudSQL / Airflow를 위한 default DB
+- [development] CloudSQL / Hyperparameter Store를 위한 default DB
 
-If you have an Astronomer account, pushing code to a Deployment on Astronomer is simple. For deploying instructions, refer to Astronomer documentation: https://docs.astronomer.io/cloud/deploy-code/
+### 설치 및 실행
 
-Contact
-=======
+1. 저장소 클론
+```bash
+git clone [repository-url]
+cd MLOps-project
+```
 
-The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support.
+2. 환경 변수 설정(.env)
+```bash
+PROJECT_PATH=/home/ubuntu
+REPOSITORY_NAME=MLOps-project
+
+SSH_HOST=[GCP 또는 AWS 인스턴스의 IP]
+SSH_USERNAME=[인스턴스의 사용자명]
+
+ARTIFACT_ROOT=s3://mlflow/
+ARTIFACT_MODEL_REGISTRY_PATH=/home/ubuntu/model_registry
+
+ENV=local
+# SSH_PRIVATE_KEY=
+
+DB_TYPE=postgresql
+DB_USER=[DB 사용자명]
+DB_PW=[DB 패스워드]
+DB_HOST=[DB 서버의 IP: GCP의 Cloud SQL 등]
+DB_PORT=[DB 서버의 PORT: postgresql의 경우 5432]
+DB_DEFAULT_NAME=[DB명: postgres]
+
+AWS_ACCESS_KEY_ID=[MLflow Admin의 아이디]
+AWS_SECRET_ACCESS_KEY=[MLflow Admin의 비밀번호]
+
+MLFLOW_TRACKING_URI=http://host.docker.internal
+MLFLOW_TRACKING_URI_LOCAL=http://localhost
+
+MLFLOW_S3_ENDPOINT_URL=http://[MinIO 서버의 내부 IP]
+MLFLOW_S3_ENDPOINT_MAIN_PORT=9000
+MLFLOW_S3_ENDPOINT_SUB_PORT=9001
+MINIO_ROOT_USER=[MinIO 서버의 사용자명]
+MINIO_ROOT_PASSWORD=[MinIO 서버의 패스워드]
+MLFLOW_TRACKING_PORT=5000
+MLFLOW_DB_HOST=[DB 서버의 IP: GCP의 Cloud SQL 등]
+
+UVICORN_PORT=8000
+MLFLOW_SERVER_HOST=0.0.0.0
+REDIS_HOST=
+REDIS_PORT=
+```
+
+3. 서비스 실행
+```bash
+./run-services.sh
+```
+
+4. 서비스 중지
+```bash
+./stop-services.sh
+```
+
+5. 서비스 재시작(중지 및 실행)
+```bash
+./restart-services.sh
+```
+
+## 주요 기능
+
+1. **BTC 가격 예측**
+   - 다음 시간대(5분 이후)의 가격 상승/하락 예측
+
+2. **모델 성능 모니터링**
+   - MLflow를 통한 모델 성능 추적
+   - Feature Importance 분석 (XAI)
+
+3. **자동화된 파이프라인**
+   - 데이터 수집 및 전처리 자동화
+   - 모델 학습 및 배포 자동화
+
+## API 엔드포인트
+
+- `GET /predict`: 다음 시간대(5분 이후)의 BTC 가격 예측
+- `GET /data/btc-ohlcv`: 수집된 BTC 가격 데이터 조회
+- `GET /xai/importance`: 모델 특성 중요도 조회
+
+## 라이선스
+
+This project is licensed under the MIT License - see the LICENSE file for details.
