@@ -13,10 +13,10 @@ from dags.module.upbit_price_prediction.btc.classification import (
     transition_model_stage,
     get_importance,
 )
-from dags.module.email_tasks import (
-    get_success_email_operator,
-    get_failure_email_operator,
-)
+# from dags.module.email_tasks import (
+#     get_success_email_operator,
+#     get_failure_email_operator,
+# )
 from airflow.models import Variable
 
 
@@ -87,9 +87,9 @@ def model_training_pipeline():
 
     end_task = EmptyOperator(task_id="end_task")
 
-    email_addr = Variable.get("email_addr")
-    success_email = get_success_email_operator(to_email=email_addr)
-    failure_email = get_failure_email_operator(to_email=email_addr)
+    # email_addr = Variable.get("email_addr")
+    # success_email = get_success_email_operator(to_email=email_addr)
+    # failure_email = get_failure_email_operator(to_email=email_addr)
 
     start_task >> wait_for_data_pipeline >> train_model_task
     (
@@ -97,7 +97,7 @@ def model_training_pipeline():
         >> [create_model_task, get_importance_task]
         >> transition_model_task
         >> end_task
-        >> success_email
+        #>> success_email
     )
     [
         train_model_task,
@@ -105,7 +105,7 @@ def model_training_pipeline():
         get_importance_task,
         transition_model_task,
         end_task,
-    ] >> failure_email
+    ] #>> failure_email
 
 
 model_training_pipeline()

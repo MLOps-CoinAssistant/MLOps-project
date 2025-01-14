@@ -9,10 +9,10 @@ from dags.module.upbit_price_prediction.btc.save_raw_data import (
     save_raw_data_from_API_fn,
 )
 from dags.module.upbit_price_prediction.btc.preprocess import preprocess_data_fn
-from dags.module.email_tasks import (
-    get_success_email_operator,
-    get_failure_email_operator,
-)
+# from dags.module.email_tasks import (
+#     get_success_email_operator,
+#     get_failure_email_operator,
+# )
 from airflow.models import Variable
 
 
@@ -56,9 +56,9 @@ def data_pipeline():
 
     end_task = EmptyOperator(task_id="end_task", trigger_rule=TriggerRule.ALL_DONE)
 
-    email_addr = Variable.get("email_addr")
-    success_email = get_success_email_operator(to_email=email_addr)
-    failure_email = get_failure_email_operator(to_email=email_addr)
+    # email_addr = Variable.get("email_addr")
+    # success_email = get_success_email_operator(to_email=email_addr)
+    # failure_email = get_failure_email_operator(to_email=email_addr)
 
     (
         start_task
@@ -68,14 +68,14 @@ def data_pipeline():
         >> preprocess_task
         >> end_task
     )
-    end_task >> success_email
+    # end_task >> success_email
     [
         delay_task,
         create_table_task,
         save_data_task,
         preprocess_task,
         end_task,
-    ] >> failure_email
+    ] # >> failure_email
 
 
 data_pipeline()

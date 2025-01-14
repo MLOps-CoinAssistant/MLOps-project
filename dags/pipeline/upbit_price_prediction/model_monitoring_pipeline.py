@@ -8,10 +8,10 @@ from dags.module.upbit_price_prediction.btc.check_performance import (
     check_model_performance,
     monitoring,
 )
-from dags.module.email_tasks import (
-    get_success_email_operator,
-    get_failure_email_operator,
-)
+# from dags.module.email_tasks import (
+#     get_success_email_operator,
+#     get_failure_email_operator,
+# )
 from airflow.models import Variable
 
 
@@ -48,20 +48,20 @@ def model_monitoring_pipeline():
 
     end_task = EmptyOperator(task_id="end_task")
 
-    email_addr = Variable.get("email_addr")
-    success_email = get_success_email_operator(to_email=email_addr)
-    failure_email = get_failure_email_operator(to_email=email_addr)
+    # email_addr = Variable.get("email_addr")
+    # success_email = get_success_email_operator(to_email=email_addr)
+    # failure_email = get_failure_email_operator(to_email=email_addr)
 
     start_task >> check_performance_task >> monitoring_task
     monitoring_task >> [trigger_training, end_task]
     trigger_training >> end_task
-    end_task >> success_email
+    end_task #>> success_email
     [
         check_performance_task,
         monitoring_task,
         trigger_training,
         end_task,
-    ] >> failure_email
+    ] #>> failure_email
 
 
 model_monitoring_pipeline()
