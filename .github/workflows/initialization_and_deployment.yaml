@@ -281,50 +281,46 @@ jobs:
             mc alias set myminio http://localhost:9000 minioadmin minioadmin
 
             echo "⭐️ mlflow_policy.json 생성"
-            cat <<EOF > ~/mlflow_policy.json
-    {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-              "Effect": "Allow",
-              "Action": [
-                "s3:GetBucketLocation",
-                "s3:ListAllMyBuckets"
-              ],
-              "Resource": [
-                "arn:aws:s3:::*"
-              ]
-            },
-            {
-              "Effect": "Allow",
-              "Action": [
-                "s3:*"
-              ],
-              "Resource": [
-                "arn:aws:s3:::mlflow",
-                "arn:aws:s3:::mlflow/*"
-              ]
-            }
-        ]
-    }
-    EOF
+            echo '{
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                      "Effect": "Allow",
+                      "Action": [
+                        "s3:GetBucketLocation",
+                        "s3:ListAllMyBuckets"
+                      ],
+                      "Resource": [
+                        "arn:aws:s3:::*"
+                      ]
+                    },
+                    {
+                      "Effect": "Allow",
+                      "Action": [
+                        "s3:*"
+                      ],
+                      "Resource": [
+                        "arn:aws:s3:::mlflow",
+                        "arn:aws:s3:::mlflow/*"
+                      ]
+                    }
+                ]
+            }' > ~/mlflow_policy.json
 
             echo "⭐️ init-minio.sh 생성"
-            cat <<'SCRIPT' > ~/init-minio.sh
-    #!/bin/bash
+            echo '#!/bin/bash
 
-    # MinIO 서버가 완전히 시작될 때까지 대기
-    sleep 60
+            # MinIO 서버가 완전히 시작될 때까지 대기
+            sleep 60
 
-    # 기본 설정 적용
-    mc alias set myminio http://localhost:9000 minioadmin minioadmin
+            # 기본 설정 적용
+            mc alias set myminio http://localhost:9000 minioadmin minioadmin
 
-    # 버킷, 정책, 사용자 생성 및 설정
-    mc mb myminio/mlflow --ignore-existing
-    mc admin policy create myminio mlflow_readwrite ~/mlflow_policy.json --ignore-existing
-    mc admin user add myminio mlflow_admin mlflow_admin --ignore-existing
-    mc admin policy attach myminio mlflow_readwrite --user mlflow_admin
-    SCRIPT
+            # 버킷, 정책, 사용자 생성 및 설정
+            mc mb myminio/mlflow --ignore-existing
+            mc admin policy create myminio mlflow_readwrite ~/mlflow_policy.json --ignore-existing
+            mc admin user add myminio mlflow_admin mlflow_admin --ignore-existing
+            mc admin policy attach myminio mlflow_readwrite --user mlflow_admin' > ~/init-minio.sh
 
             chmod +x ~/init-minio.sh
 
@@ -333,21 +329,21 @@ jobs:
 
             echo "⭐️ systemd 서비스 파일 생성"
             sudo bash -c 'cat <<EOF > /etc/systemd/system/minio.service
-    [Unit]
-    Description=MinIO Service
-    After=network.target
+              [Unit]
+              Description=MinIO Service
+              After=network.target
 
-    [Service]
-    Type=simple
-    Restart=always
-    RestartSec=5
-    WorkingDirectory=/home/ubuntu
-    ExecStart=/usr/local/bin/minio server --address ":9000" --console-address ":9001" /home/ubuntu/model_registry
-    ExecStartPost=/home/ubuntu/init-minio.sh
+              [Service]
+              Type=simple
+              Restart=always
+              RestartSec=5
+              WorkingDirectory=/home/ubuntu
+              ExecStart=/usr/local/bin/minio server --address ":9000" --console-address ":9001" /home/ubuntu/model_registry
+              ExecStartPost=/home/ubuntu/init-minio.sh
 
-    [Install]
-    WantedBy=multi-user.target
-    EOF'
+              [Install]
+              WantedBy=multi-user.target
+            EOF'
 
             echo "⭐️ MinIO 서비스 활성화 및 시작"
             sudo systemctl daemon-reload
@@ -355,89 +351,88 @@ jobs:
             sudo systemctl start minio
 
             echo "⭐️ test-minio-restart.sh 생성"
-            cat <<'SCRIPT' > ~/test-minio-restart.sh
-    #!/bin/bash
+            echo '#!/bin/bash
 
-    # MinIO 프로세스 PID 확인 함수
-    get_minio_pid() {
-        pgrep -f "/usr/local/bin/minio server"
-    }
+            # MinIO 프로세스 PID 확인 함수
+            get_minio_pid() {
+                pgrep -f "/usr/local/bin/minio server"
+            }
 
-    # MinIO 설정 상태 확인 함수
-    check_minio_config() {
-        echo "=== MinIO 설정 상태 확인 ==="
+            # MinIO 설정 상태 확인 함수
+            check_minio_config() {
+                echo "=== MinIO 설정 상태 확인 ==="
 
-        echo "1. 전체 버킷 리스트:"
-        mc ls myminio 2>/dev/null || echo "버킷 리스트 확인 실패"
+                echo "1. 전체 버킷 리스트:"
+                mc ls myminio 2>/dev/null || echo "버킷 리스트 확인 실패"
 
-        echo -e "\n2. mlflow 버킷 용량:"
-        mc du myminio/mlflow 2>/dev/null || echo "mlflow 버킷 용량 확인 실패"
+                echo -e "\n2. mlflow 버킷 용량:"
+                mc du myminio/mlflow 2>/dev/null || echo "mlflow 버킷 용량 확인 실패"
 
-        echo -e "\n3. 정책 리스트:"
-        mc admin policy list myminio 2>/dev/null || echo "정책 리스트 확인 실패"
+                echo -e "\n3. 정책 리스트:"
+                mc admin policy list myminio 2>/dev/null || echo "정책 리스트 확인 실패"
 
-        echo -e "\n4. mlflow_readwrite 정책 상세:"
-        mc admin policy info myminio mlflow_readwrite 2>/dev/null || echo "mlflow_readwrite 정책 확인 실패"
+                echo -e "\n4. mlflow_readwrite 정책 상세:"
+                mc admin policy info myminio mlflow_readwrite 2>/dev/null || echo "mlflow_readwrite 정책 확인 실패"
 
-        echo -e "\n5. 사용자 리스트:"
-        mc admin user list myminio 2>/dev/null || echo "사용자 리스트 확인 실패"
+                echo -e "\n5. 사용자 리스트:"
+                mc admin user list myminio 2>/dev/null || echo "사용자 리스트 확인 실패"
 
-        echo -e "\n6. mlflow_admin 사용자 상세:"
-        mc admin user info myminio mlflow_admin 2>/dev/null || echo "mlflow_admin 사용자 확인 실패"
+                echo -e "\n6. mlflow_admin 사용자 상세:"
+                mc admin user info myminio mlflow_admin 2>/dev/null || echo "mlflow_admin 사용자 확인 실패"
 
-        echo -e "\n7. mlflow 버킷 내용:"
-        mc ls myminio/mlflow 2>/dev/null || echo "mlflow 버킷 내용 확인 실패"
+                echo -e "\n7. mlflow 버킷 내용:"
+                mc ls myminio/mlflow 2>/dev/null || echo "mlflow 버킷 내용 확인 실패"
 
-        echo "======================="
-    }
+                echo "======================="
+            }
 
-    # 초기 상태 확인
-    echo "=== 초기 상태 ==="
-    initial_pid=$(get_minio_pid)
-    echo "현재 MinIO PID: $initial_pid"
-    check_minio_config
+            # 초기 상태 확인
+            echo "=== 초기 상태 ==="
+            initial_pid=$(get_minio_pid)
+            echo "현재 MinIO PID: $initial_pid"
+            check_minio_config
 
-    # MinIO 프로세스 종료
-    echo -e "\n=== MinIO 프로세스 종료 ==="
-    echo "프로세스 $initial_pid 를 종료합니다..."
-    sudo kill $initial_pid
+            # MinIO 프로세스 종료
+            echo -e "\n=== MinIO 프로세스 종료 ==="
+            echo "프로세스 $initial_pid 를 종료합니다..."
+            sudo kill $initial_pid
 
-    # 프로세스가 종료될 때까지 대기
-    echo -e "\n프로세스 종료 대기 중..."
-    while kill -0 $initial_pid 2>/dev/null; do
-        echo "아직 프로세스가 실행 중입니다..."
-        sleep 1
-    done
-    echo "프로세스가 종료되었습니다."
+            # 프로세스가 종료될 때까지 대기
+            echo -e "\n프로세스 종료 대기 중..."
+            while kill -0 $initial_pid 2>/dev/null; do
+                echo "아직 프로세스가 실행 중입니다..."
+                sleep 1
+            done
+            echo "프로세스가 종료되었습니다."
 
-    # 새로운 프로세스 시작 대기 및 모니터링
-    echo -e "\n=== 새로운 MinIO 프로세스 대기 중 ==="
-    max_wait=30
-    waited=0
-    while [ $waited -lt $max_wait ]; do
-        new_pid=$(get_minio_pid)
-        if [ ! -z "$new_pid" ] && [ "$new_pid" != "$initial_pid" ]; then
-            echo "새로운 MinIO 프로세스가 시작되었습니다. (PID: $new_pid)"
-            echo "API가 준비될 때까지 10초 대기..."
-            sleep 10
-            break
-        fi
-        echo "새로운 프로세스 대기 중... (${waited}/${max_wait}초)"
-        sleep 1
-        waited=$((waited + 1))
-    done
+            # 새로운 프로세스 시작 대기 및 모니터링
+            echo -e "\n=== 새로운 MinIO 프로세스 대기 중 ==="
+            max_wait=30
+            waited=0
+            while [ $waited -lt $max_wait ]; do
+                new_pid=$(get_minio_pid)
+                if [ ! -z "$new_pid" ] && [ "$new_pid" != "$initial_pid" ]; then
+                    echo "새로운 MinIO 프로세스가 시작되었습니다. (PID: $new_pid)"
+                    echo "API가 준비될 때까지 10초 대기..."
+                    sleep 10
+                    break
+                fi
+                echo "새로운 프로세스 대기 중... (${waited}/${max_wait}초)"
+                sleep 1
+                waited=$((waited + 1))
+            done
 
-    if [ $waited -eq $max_wait ]; then
-        echo "타임아웃: 새로운 MinIO 프로세스가 시작되지 않았습니다."
-        exit 1
-    fi
+            if [ $waited -eq $max_wait ]; then
+                echo "타임아웃: 새로운 MinIO 프로세스가 시작되지 않았습니다."
+                exit 1
+            fi
 
-    # 최종 상태 확인
-    echo -e "\n=== 최종 상태 확인 ==="
-    final_pid=$(get_minio_pid)
-    echo "현재 MinIO PID: $final_pid"
-    check_minio_config
-    SCRIPT
+            # 최종 상태 확인
+            echo -e "\n=== 최종 상태 확인 ==="
+            final_pid=$(get_minio_pid)
+            echo "현재 MinIO PID: $final_pid"
+            check_minio_config
+            ' > ~/test-minio-restart.sh
 
             chmod +x ~/test-minio-restart.sh
 
@@ -504,7 +499,6 @@ jobs:
             echo "ENV_EXISTS=true" >> $GITHUB_OUTPUT
           else
             echo "ENV_EXISTS=false" >> $GITHUB_OUTPUT
-        # Removed 'fi' as it was incorrectly indented
 
       - name: Debug Output
         run: |
@@ -589,7 +583,6 @@ jobs:
               --conn-password "${{ secrets.DB_PW }}" \
               --conn-port "${{ secrets.DB_PORT }}" \
               --conn-schema "${{ secrets.DB_USER }}"
-
             echo "⭐️ Airflow 설정 완료"
 
   deployment:
