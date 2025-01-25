@@ -41,6 +41,8 @@ fi
 
 # Docker Compose로 mlflow 서비스 중지
 docker-compose -f mlflow-compose.yaml down
+docker system prune -f
+docker logs -f mlflow-server
 
 # mlflow-server 관련 컨테이너 중지
 mlflow_containers=$(docker ps -a | grep mlflow | awk '{print $1}')

@@ -31,6 +31,7 @@ conda activate "$ENV_NAME"
 # mlflow 서비스가 이미 실행 중인지 확인
 if ! docker ps -a | grep -q mlflow; then
     echo "Starting MLflow service..."
+    docker-compose -f mlflow-compose.yaml build --no-cache
     docker-compose -f mlflow-compose.yaml up -d
 fi
 
