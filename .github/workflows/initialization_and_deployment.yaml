@@ -144,39 +144,24 @@ jobs:
             # Ensure gcloud is installed for retrieving project ID
             sudo apt-get update && sudo apt-get install -y google-cloud-sdk
 
-      - name: Get GCP Project ID
-        uses: appleboy/ssh-action@master
-        id: get_project_id
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          script: |
-            gcloud config get-value project
-        # Capture the output
-        # script_result: true
-        envs: PROJECT_ID
+      - name: Setup SSH key for runner
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Set Project ID Output
-        if: success()
-        run: echo "project_id=${{ steps.get_project_id.outputs.PROJECT_ID }}" >> $GITHUB_OUTPUT
+      - name: Get GCP Project ID
+        id: set_project_id
+        run: |
+          PROJECT_ID=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "gcloud config get-value project")
+          echo "project_id=${PROJECT_ID}" >> $GITHUB_OUTPUT
 
       - name: Get SSH Public Key
-        uses: appleboy/ssh-action@master
-        id: get_public_key
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          script: |
-            cat ~/.ssh/id_rsa.pub
-        # Capture the output
-        # script_result: true
-        envs: PUBLIC_KEY
-
-      - name: Set Public Key Output
-        if: success()
-        run: echo "public_key=${{ steps.get_public_key.outputs.PUBLIC_KEY }}" >> $GITHUB_OUTPUT
+        id: set_public_key
+        run: |
+          PUBLIC_KEY=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "cat ~/.ssh/id_rsa.pub")
+          echo "public_key=${PUBLIC_KEY}" >> $GITHUB_OUTPUT
 
       - name: Verify Outputs
         run: |
@@ -186,7 +171,7 @@ jobs:
         continue-on-error: false
 
   setup_minio:
-    needs: [initialization]
+    needs: initialization
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -343,7 +328,7 @@ jobs:
 
               [Install]
               WantedBy=multi-user.target
-            EOF'
+              EOF'
 
             echo "⭐️ MinIO 서비스 활성화 및 시작"
             sudo systemctl daemon-reload
@@ -458,7 +443,9 @@ jobs:
 
       - name: Set MinIO Public Key Output
         id: set_minio_public_key
-        run: echo "minio_public_key=$(cat minio_public_key.pub)" >> $GITHUB_OUTPUT
+        run: |
+          MINIO_PUBLIC_KEY=$(cat minio_public_key.pub)
+          echo "minio_public_key=${MINIO_PUBLIC_KEY}" >> $GITHUB_OUTPUT
 
       - name: Add MinIO Public Key to Initial Instance
         uses: appleboy/ssh-action@master
@@ -476,34 +463,25 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
+      - name: Setup SSH key for runner
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
       - name: Check if .env exists
         id: check_env
-        uses: appleboy/ssh-action@master
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          script: |
-            if [ -f "/home/${{ secrets.SSH_USERNAME }}/MLOps-project/.env" ]; then
-              echo "⭐️ .env file already exists"
-            else
-              echo "⭐️ .env file does not exist"
-            fi
-        # script_result: true
-        envs: RESULT
-
-      - name: Set env exists status
-        id: set_status
         run: |
-          if [[ "${{ steps.check_env.outputs.output }}" == *"already exists"* ]]; then
+          if ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "[ -f /home/${{ secrets.SSH_USERNAME }}/MLOps-project/.env ]"; then
             echo "ENV_EXISTS=true" >> $GITHUB_OUTPUT
           else
             echo "ENV_EXISTS=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Debug Output
         run: |
-          echo "SSH Output: ${{ steps.check_env.outputs.output }}"
-          echo "ENV_EXISTS: ${{ steps.set_status.outputs.ENV_EXISTS }}"
+          echo "ENV_EXISTS: ${{ steps.check_env.outputs.ENV_EXISTS }}"
         env:
           PROJECT_PATH: "/home/${{ secrets.SSH_USERNAME }}"
           REPOSITORY_NAME: "MLOps-project"
@@ -513,7 +491,7 @@ jobs:
           ENV: "local"
 
       - name: Create .env File
-        if: steps.set_status.outputs.ENV_EXISTS == 'false'
+        if: steps.check_env.outputs.ENV_EXISTS == 'false'
         uses: ./.github/actions/create-env
         with:
           PROJECT_PATH: ${{ env.PROJECT_PATH }}
