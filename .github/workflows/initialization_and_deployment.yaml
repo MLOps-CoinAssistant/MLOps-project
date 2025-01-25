@@ -8,6 +8,9 @@ on:
 jobs:
   initialization:
     runs-on: ubuntu-latest
+    outputs:
+      project_id: ${{ steps.set_project_id.outputs.project_id }}
+      public_key: ${{ steps.set_public_key.outputs.public_key }}
 
     steps:
       - name: Checkout Repository
@@ -36,8 +39,7 @@ jobs:
                   $(lsb_release -cs)-pgdg main" \
                 > /etc/apt/sources.list.d/pgdg.list'
               wget --quiet -O - \
-                https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
-                sudo apt-key add -
+                https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
               sudo apt-get update && sudo apt-get -y install postgresql-14
 
               echo "⭐️ 필요한 패키지 설치"
@@ -111,7 +113,7 @@ jobs:
               sudo apt install -y shellcheck
               pip install "apache-airflow==2.7.2" \
                 --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.2/constraints-3.11.txt"
-              
+
               conda deactivate
 
               echo "⭐️ Astronomer 설치"
@@ -119,7 +121,7 @@ jobs:
               echo 'n' | astro dev init
 
               echo "⭐️ Astronomer 개발 서버 초기화"
-              timeout 300 astro dev start || true 
+              timeout 300 astro dev start || true
               if netstat -tuln | grep -q ':5432'; then
                 echo "‼️ 포트 5432가 이미 사용 중입니다. 프로세스를 종료합니다."
                 sudo systemctl stop postgresql || true
@@ -139,9 +141,336 @@ jobs:
               fi
               echo "⭐️ 설정 완료"
               touch /home/${{ secrets.SSH_USERNAME }}/.setup_done
-            else
-              echo "⭐️ Already Initialized"
-            fi
+            # Ensure gcloud is installed for retrieving project ID
+            sudo apt-get update && sudo apt-get install -y google-cloud-sdk
+
+      - name: Get GCP Project ID
+        uses: appleboy/ssh-action@master
+        id: get_project_id
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          script: |
+            gcloud config get-value project
+        # Capture the output
+        script_result: true
+        envs: PROJECT_ID
+
+      - name: Set Project ID Output
+        if: success()
+        run: echo "project_id=${{ steps.get_project_id.outputs.PROJECT_ID }}" >> $GITHUB_OUTPUT
+
+      - name: Get SSH Public Key
+        uses: appleboy/ssh-action@master
+        id: get_public_key
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          script: |
+            cat ~/.ssh/id_rsa.pub
+        # Capture the output
+        script_result: true
+        envs: PUBLIC_KEY
+
+      - name: Set Public Key Output
+        if: success()
+        run: echo "public_key=${{ steps.get_public_key.outputs.PUBLIC_KEY }}" >> $GITHUB_OUTPUT
+
+      - name: Verify Outputs
+        run: |
+          echo "Project ID: ${{ steps.set_project_id.outputs.project_id }}"
+          echo "Public Key: ${{ steps.set_public_key.outputs.public_key }}"
+        if: failure()
+        continue-on-error: false
+
+  setup_minio:
+    needs: [initialization]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Install Gcloud CLI if not present
+        run: |
+          if ! command -v gcloud &> /dev/null; then
+            echo "⭐️ Gcloud CLI 설치"
+            sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates gnupg
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+            curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+            sudo apt-get update && sudo apt-get install -y google-cloud-sdk
+          fi
+
+      - name: GCP Auth
+        run: |
+          echo "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}" > gcp-key.json
+          gcloud auth activate-service-account --key-file=gcp-key.json
+          gcloud config set project ${{ needs.initialization.outputs.project_id }}
+
+      - name: Create GCE Instance for MinIO
+        id: create_gce
+        run: |
+          CURRENT_TIMESTAMP=$(date +%s)
+          MINIO_INSTANCE_NAME="minio-instance-${CURRENT_TIMESTAMP}"
+          echo "instance_name=$MINIO_INSTANCE_NAME" >> $GITHUB_OUTPUT
+
+          echo "⭐️ GCE 인스턴스 생성"
+          gcloud compute instances create "$MINIO_INSTANCE_NAME" \
+            --zone="asia-northeast3-a" \
+            --machine-type="e2-custom-2-4096" \
+            --image-project="ubuntu-os-cloud" \
+            --image-family="ubuntu-2204-lts" \
+            --boot-disk-size="100GB" \
+            --tags="http-server" \
+            --metadata="ssh-keys=ubuntu:${{ needs.initialization.outputs.public_key }}" \
+            --scopes="https://www.googleapis.com/auth/devstorage.full_control"
+
+      - name: Get MinIO Instance External IP
+        id: get_ip
+        run: |
+          MINIO_INSTANCE_NAME="${{ steps.create_gce.outputs.instance_name }}"
+          MINIO_EXTERNAL_IP=$(gcloud compute instances describe "$MINIO_INSTANCE_NAME" --zone="asia-northeast3-a" --format="get(networkInterfaces[0].accessConfigs[0].natIP)")
+          echo "minio_ip=${MINIO_EXTERNAL_IP}" >> $GITHUB_OUTPUT
+
+      - name: Wait for SSH to be available
+        uses: jakejarvis/wait-for-ssh@v0.1.3
+        with:
+          host: ${{ steps.get_ip.outputs.minio_ip }}
+          port: 22
+          timeout: 300
+
+      - name: SSH to MinIO and Install
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ steps.get_ip.outputs.minio_ip }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+
+            echo "⭐️ 시스템 업데이트 및 필수 패키지 설치"
+            sudo apt update && sudo apt upgrade -y
+            sudo apt-get install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common
+
+            echo "⭐️ PostgreSQL 설정"
+            sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+            wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+            sudo apt-get update && sudo apt-get -y install postgresql-14
+
+            echo "⭐️ Docker 설치"
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+            sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+            sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+            sudo usermod -aG docker ubuntu
+            sudo systemctl restart docker
+
+            echo "⭐️ Docker Compose 설치"
+            sudo apt -y install docker-compose
+
+            echo "⭐️ MinIO 설치"
+            wget https://dl.min.io/server/minio/release/linux-amd64/archive/minio_20240330094156.0.0_amd64.deb -O minio.deb
+            sudo dpkg -i minio.deb
+            mkdir -p ~/model_registry
+            nohup minio server ~/model_registry &
+
+            echo "⭐️ MinIO Client 설치 및 설정"
+            wget https://dl.min.io/client/mc/release/linux-amd64/mc
+            chmod +x mc
+            sudo mv mc /usr/local/bin/
+            mc alias set myminio http://localhost:9000 minioadmin minioadmin
+
+            echo "⭐️ mlflow_policy.json 생성"
+            cat <<EOF > ~/mlflow_policy.json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListAllMyBuckets"
+          ],
+          "Resource": [
+            "arn:aws:s3:::*"
+          ]
+        },
+        {
+          "Effect": "Allow",
+          "Action": [
+            "s3:*"
+          ],
+          "Resource": [
+            "arn:aws:s3:::mlflow",
+            "arn:aws:s3:::mlflow/*"
+          ]
+        }
+    ]
+}
+EOF
+
+            echo "⭐️ init-minio.sh 생성"
+            cat <<'SCRIPT' > ~/init-minio.sh
+#!/bin/bash
+
+# MinIO 서버가 완전히 시작될 때까지 대기
+sleep 60
+
+# 기본 설정 적용
+mc alias set myminio http://localhost:9000 minioadmin minioadmin
+
+# 버킷, 정책, 사용자 생성 및 설정
+mc mb myminio/mlflow --ignore-existing
+mc admin policy create myminio mlflow_readwrite ~/mlflow_policy.json --ignore-existing
+mc admin user add myminio mlflow_admin mlflow_admin --ignore-existing
+mc admin policy attach myminio mlflow_readwrite --user mlflow_admin
+SCRIPT
+
+            chmod +x ~/init-minio.sh
+
+            echo "⭐️ init-minio.sh 실행"
+            ~/init-minio.sh
+
+            echo "⭐️ systemd 서비스 파일 생성"
+            sudo bash -c 'cat <<EOF > /etc/systemd/system/minio.service
+[Unit]
+Description=MinIO Service
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+WorkingDirectory=/home/ubuntu
+ExecStart=/usr/local/bin/minio server --address ":9000" --console-address ":9001" /home/ubuntu/model_registry
+ExecStartPost=/home/ubuntu/init-minio.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF'
+
+            echo "⭐️ MinIO 서비스 활성화 및 시작"
+            sudo systemctl daemon-reload
+            sudo systemctl enable minio
+            sudo systemctl start minio
+
+            echo "⭐️ test-minio-restart.sh 생성"
+            cat <<'SCRIPT' > ~/test-minio-restart.sh
+#!/bin/bash
+
+# MinIO 프로세스 PID 확인 함수
+get_minio_pid() {
+    pgrep -f "/usr/local/bin/minio server"
+}
+
+# MinIO 설정 상태 확인 함수
+check_minio_config() {
+    echo "=== MinIO 설정 상태 확인 ==="
+
+    echo "1. 전체 버킷 리스트:"
+    mc ls myminio 2>/dev/null || echo "버킷 리스트 확인 실패"
+
+    echo -e "\n2. mlflow 버킷 용량:"
+    mc du myminio/mlflow 2>/dev/null || echo "mlflow 버킷 용량 확인 실패"
+
+    echo -e "\n3. 정책 리스트:"
+    mc admin policy list myminio 2>/dev/null || echo "정책 리스트 확인 실패"
+
+    echo -e "\n4. mlflow_readwrite 정책 상세:"
+    mc admin policy info myminio mlflow_readwrite 2>/dev/null || echo "mlflow_readwrite 정책 확인 실패"
+
+    echo -e "\n5. 사용자 리스트:"
+    mc admin user list myminio 2>/dev/null || echo "사용자 리스트 확인 실패"
+
+    echo -e "\n6. mlflow_admin 사용자 상세:"
+    mc admin user info myminio mlflow_admin 2>/dev/null || echo "mlflow_admin 사용자 확인 실패"
+
+    echo -e "\n7. mlflow 버킷 내용:"
+    mc ls myminio/mlflow 2>/dev/null || echo "mlflow 버킷 내용 확인 실패"
+
+    echo "======================="
+}
+
+# 초기 상태 확인
+echo "=== 초기 상태 ==="
+initial_pid=$(get_minio_pid)
+echo "현재 MinIO PID: $initial_pid"
+check_minio_config
+
+# MinIO 프로세스 종료
+echo -e "\n=== MinIO 프로세스 종료 ==="
+echo "프로세스 $initial_pid 를 종료합니다..."
+sudo kill $initial_pid
+
+# 프로세스가 종료될 때까지 대기
+echo -e "\n프로세스 종료 대기 중..."
+while kill -0 $initial_pid 2>/dev/null; do
+    echo "아직 프로세스가 실행 중입니다..."
+    sleep 1
+done
+echo "프로세스가 종료되었습니다."
+
+# 새로운 프로세스 시작 대기 및 모니터링
+echo -e "\n=== 새로운 MinIO 프로세스 대기 중 ==="
+max_wait=30
+waited=0
+while [ $waited -lt $max_wait ]; do
+    new_pid=$(get_minio_pid)
+    if [ ! -z "$new_pid" ] && [ "$new_pid" != "$initial_pid" ]; then
+        echo "새로운 MinIO 프로세스가 시작되었습니다. (PID: $new_pid)"
+        echo "API가 준비될 때까지 10초 대기..."
+        sleep 10
+        break
+    fi
+    echo "새로운 프로세스 대기 중... (${waited}/${max_wait}초)"
+    sleep 1
+    waited=$((waited + 1))
+done
+
+if [ $waited -eq $max_wait ]; then
+    echo "타임아웃: 새로운 MinIO 프로세스가 시작되지 않았습니다."
+    exit 1
+fi
+
+# 최종 상태 확인
+echo -e "\n=== 최종 상태 확인 ==="
+final_pid=$(get_minio_pid)
+echo "현재 MinIO PID: $final_pid"
+check_minio_config
+SCRIPT
+
+            chmod +x ~/test-minio-restart.sh
+
+            echo "⭐️ test-minio-restart.sh 실행"
+            ~/test-minio-restart.sh
+
+            echo "⭐️ SSH 키 교환 준비"
+            # Generate SSH key on MinIO instance
+            ssh-keygen -t rsa -b 4096 -C "minio" -f ~/.ssh/id_rsa_minio -N ""
+            # Retrieve the public key
+            MINIO_PUBLIC_KEY=$(cat ~/.ssh/id_rsa_minio.pub)
+            echo "$MINIO_PUBLIC_KEY" > ~/minio_public_key.pub
+
+      - name: Retrieve MinIO Public Key
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ steps.get_ip.outputs.minio_ip }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "/home/ubuntu/minio_public_key.pub"
+          target: "./minio_public_key.pub"
+
+      - name: Add MinIO Public Key to Initial Instance
+        uses: appleboy/ssh-action@master
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          script: |
+            cat ~/minio_public_key.pub >> ~/.ssh/authorized_keys
+        # Ensure the public key is available in the runner
+        env:
+          MINIO_PUBLIC_KEY: ${{ steps.retrieve_minio_public_key.outputs.minio_public_key }}
 
   create_env:
     needs: initialization
@@ -179,7 +508,6 @@ jobs:
         run: |
           echo "SSH Output: ${{ steps.check_env.outputs.output }}"
           echo "ENV_EXISTS: ${{ steps.set_status.outputs.ENV_EXISTS }}"
-
         env:
           PROJECT_PATH: "/home/${{ secrets.SSH_USERNAME }}"
           REPOSITORY_NAME: "MLOps-project"
@@ -194,6 +522,7 @@ jobs:
         with:
           PROJECT_PATH: ${{ env.PROJECT_PATH }}
           REPOSITORY_NAME: ${{ env.REPOSITORY_NAME }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
           DB_TYPE: ${{ env.DB_TYPE }}
@@ -226,7 +555,6 @@ jobs:
   configure_airflow:
     runs-on: ubuntu-latest
     needs: [create_env]
-
     steps:
       - name: Configure Airflow Variables and Connections
         uses: appleboy/ssh-action@master
@@ -236,9 +564,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           script: |
             echo "⭐️ Airflow Variables 추가"
-
             airflow db init
-            
             docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set UPBIT_ACCESS_API_KEY "${{ secrets.UPBIT_ACCESS_API_KEY }}"
             docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set UPBIT_SECRET_API_KEY "${{ secrets.UPBIT_SECRET_API_KEY }}"
             docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set OPENAI_API_KEY "${{ secrets.OPENAI_API_KEY }}"
@@ -266,8 +592,7 @@ jobs:
 
   deployment:
     runs-on: ubuntu-latest
-    needs: [initialization, create_env]
-
+    needs: [initialization, create_env, setup_minio]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v2
