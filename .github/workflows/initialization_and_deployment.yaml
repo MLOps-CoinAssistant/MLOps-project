@@ -154,7 +154,7 @@ jobs:
           script: |
             gcloud config get-value project
         # Capture the output
-        script_result: true
+        # script_result: true
         envs: PROJECT_ID
 
       - name: Set Project ID Output
@@ -171,7 +171,7 @@ jobs:
           script: |
             cat ~/.ssh/id_rsa.pub
         # Capture the output
-        script_result: true
+        # script_result: true
         envs: PUBLIC_KEY
 
       - name: Set Public Key Output
@@ -489,7 +489,7 @@ jobs:
             else
               echo "⭐️ .env file does not exist"
             fi
-        script_result: true
+        # script_result: true
         envs: RESULT
 
       - name: Set env exists status
