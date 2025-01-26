@@ -265,6 +265,11 @@ jobs:
             echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
             echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
             echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
+            echo "PROJECT_PATH=${{ vars.PROJECT_PATH }}" >> .env
+            echo "REPOSITORY_NAME=${{ vars.REPOSITORY_NAME }}" >> .env
+            echo "SSH_HOST=${{ secrets.SSH_HOST }}" >> .env
+            echo "SSH_USERNAME=${{ secrets.SSH_USERNAME }}" >> .env
+            echo "SSH_PRIVATE_KEY=${{ secrets.SSH_PRIVATE_KEY }}" >> .env
 
             echo "⭐️ 환경 변수 업데이트 완료"
 
