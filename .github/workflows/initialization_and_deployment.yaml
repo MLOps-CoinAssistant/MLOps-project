@@ -146,82 +146,127 @@ jobs:
   create_env:
     needs: initialization
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+    # steps:
+    #   - name: Checkout Repository
+    #     uses: actions/checkout@v2
 
-      - name: Check if .env exists
-        id: check_env
+    #   - name: Check if .env exists
+    #     id: check_env
+    #     uses: appleboy/ssh-action@master
+    #     with:
+    #       key: ${{ secrets.SSH_PRIVATE_KEY }}
+    #       host: ${{ secrets.SSH_HOST }}
+    #       username: ${{ secrets.SSH_USERNAME }}
+    #       script: |
+    #         if [ -f "/home/${{ secrets.SSH_USERNAME }}/MLOps-project/.env" ]; then
+    #           echo "⭐️ .env file already exists"
+    #         else
+    #           echo "⭐️ .env file does not exist"
+    #         fi
+    #       script_result: true
+    #       envs: RESULT
+
+    #   - name: Set env exists status
+    #     id: set_status
+    #     run: |
+    #       if [[ "${{ steps.check_env.outputs.output }}" == *"already exists"* ]]; then
+    #         echo "ENV_EXISTS=true" >> $GITHUB_OUTPUT
+    #       else
+    #         echo "ENV_EXISTS=false" >> $GITHUB_OUTPUT
+    #       fi
+
+    #   - name: Debug Output
+    #     run: |
+    #       echo "SSH Output: ${{ steps.check_env.outputs.output }}"
+    #       echo "ENV_EXISTS: ${{ steps.set_status.outputs.ENV_EXISTS }}"
+
+    #     env:
+    #       PROJECT_PATH: "/home/${{ secrets.SSH_USERNAME }}"
+    #       REPOSITORY_NAME: "MLOps-project"
+    #       DB_TYPE: "postgresql"
+    #       ARTIFACT_ROOT: "s3://mlflow"
+    #       ARTIFACT_MODEL_REGISTRY_PATH: "/home/${{ secrets.SSH_USERNAME }}/model_registry"
+    #       ENV: "local"
+
+    #   - name: Create .env File
+    #     if: steps.set_status.outputs.ENV_EXISTS == 'false'
+    #     uses: ./.github/actions/create-env
+    #     with:
+    #       PROJECT_PATH: ${{ env.PROJECT_PATH }}
+    #       REPOSITORY_NAME: ${{ env.REPOSITORY_NAME }}
+    #       SSH_HOST: ${{ secrets.SSH_HOST }}
+    #       SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+    #       DB_TYPE: ${{ env.DB_TYPE }}
+    #       ARTIFACT_ROOT: ${{ env.ARTIFACT_ROOT }}
+    #       ARTIFACT_MODEL_REGISTRY_PATH: ${{ env.ARTIFACT_MODEL_REGISTRY_PATH }}
+    #       ENV: ${{ env.ENV }}
+    #       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+    #       DB_USER: ${{ secrets.DB_USER }}
+    #       DB_PW: ${{ secrets.DB_PW }}
+    #       DB_HOST: ${{ secrets.DB_HOST }}
+    #       DB_PORT: ${{ secrets.DB_PORT }}
+    #       MLFLOW_S3_ENDPOINT_URL: ${{ secrets.MLFLOW_S3_ENDPOINT_URL }}
+    #       MLFLOW_S3_ENDPOINT_MAIN_PORT: ${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}
+    #       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    #       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #       MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+    #       MLFLOW_TRACKING_EXTERNAL_PORT: ${{ secrets.MLFLOW_TRACKING_EXTERNAL_PORT }}
+    #       MLFLOW_TRACKING_INTERNAL_PORT: ${{ secrets.MLFLOW_TRACKING_INTERNAL_PORT }}
+    #       MLFLOW_DB_HOST: ${{ secrets.MLFLOW_DB_HOST }}
+    #       MLFLOW_TRACKING_URI_LOCAL: ${{ secrets.MLFLOW_TRACKING_URI_LOCAL }}
+    #       MLFLOW_S3_ENDPOINT_SUB_PORT: ${{ secrets.MLFLOW_S3_ENDPOINT_SUB_PORT }}
+    #       MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+    #       MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+    #       DB_DEFAULT_NAME: ${{ secrets.DB_DEFAULT_NAME }}
+    #       MLFLOW_SERVER_HOST: ${{ secrets.MLFLOW_SERVER_HOST }}
+    #       UVICORN_PORT: ${{ secrets.UVICORN_PORT }}
+    #       REDIS_HOST: ${{ secrets.REDIS_HOST }}
+    #       REDIS_PORT: ${{ secrets.REDIS_PORT }}
+    steps:
+      - name: Create .env File on Remote Server
         uses: appleboy/ssh-action@master
         with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ inputs.SSH_PRIVATE_KEY }}
+          host: ${{ inputs.SSH_HOST }}
+          username: ${{ inputs.SSH_USERNAME }}
           script: |
-            if [ -f "/home/${{ secrets.SSH_USERNAME }}/MLOps-project/.env" ]; then
-              echo "⭐️ .env file already exists"
+            echo "⭐️ .env 파일 설정 및 업데이트"
+
+            cd ${{ vars.PROJECT_PATH }}/${{ vars.REPOSITORY_NAME }}
+
+            if [ ! -f ".env" ]; then
+                touch .env
             else
-              echo "⭐️ .env file does not exist"
+                echo "✅ .env 파일이 이미 존재합니다."
             fi
-          script_result: true
-          envs: RESULT
+            echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
+            echo "ARTIFACT_ROOT=${{ vars.ARTIFACT_ROOT }}" >> .env
+            echo "ARTIFACT_MODEL_REGISTRY_PATH=${{ vars.ARTIFACT_MODEL_REGISTRY_PATH }}" >> .env
+            echo "ENV=${{ vars.ENV }}" >> .env
 
-      - name: Set env exists status
-        id: set_status
-        run: |
-          if [[ "${{ steps.check_env.outputs.output }}" == *"already exists"* ]]; then
-            echo "ENV_EXISTS=true" >> $GITHUB_OUTPUT
-          else
-            echo "ENV_EXISTS=false" >> $GITHUB_OUTPUT
-          fi
+            echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+            echo "DB_PW=${{ secrets.DB_PW }}" >> .env
+            echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+            echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+            echo "MLFLOW_S3_ENDPOINT_URL=${{ secrets.MLFLOW_S3_ENDPOINT_URL }}" >> .env
+            echo "MLFLOW_S3_ENDPOINT_MAIN_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}" >> .env
+            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
+            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+            echo "MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }}" >> .env
+            echo "MLFLOW_TRACKING_EXTERNAL_PORT=${{ secrets.MLFLOW_TRACKING_EXTERNAL_PORT }}" >> .env
+            echo "MLFLOW_TRACKING_INTERNAL_PORT=${{ secrets.MLFLOW_TRACKING_INTERNAL_PORT }}" >> .env
+            echo "MLFLOW_DB_HOST=${{ secrets.MLFLOW_DB_HOST }}" >> .env
+            echo "MLFLOW_TRACKING_URI_LOCAL=${{ secrets.MLFLOW_TRACKING_URI_LOCAL }}" >> .env
+            echo "MLFLOW_S3_ENDPOINT_SUB_PORT=${{ secrets.MLFLOW_S3_ENDPOINT_SUB_PORT }}" >> .env
+            echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" >> .env
+            echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env
+            echo "DB_DEFAULT_NAME=${{ secrets.DB_DEFAULT_NAME }}" >> .env
+            echo "MLFLOW_SERVER_HOST=${{ secrets.MLFLOW_SERVER_HOST }}" >> .env
+            echo "UVICORN_PORT=${{ secrets.UVICORN_PORT }}" >> .env
+            echo "REDIS_HOST=${{ secrets.REDIS_HOST }}" >> .env
+            echo "REDIS_PORT=${{ secrets.REDIS_PORT }}" >> .env
 
-      - name: Debug Output
-        run: |
-          echo "SSH Output: ${{ steps.check_env.outputs.output }}"
-          echo "ENV_EXISTS: ${{ steps.set_status.outputs.ENV_EXISTS }}"
-
-        env:
-          PROJECT_PATH: "/home/${{ secrets.SSH_USERNAME }}"
-          REPOSITORY_NAME: "MLOps-project"
-          DB_TYPE: "postgresql"
-          ARTIFACT_ROOT: "s3://mlflow"
-          ARTIFACT_MODEL_REGISTRY_PATH: "/home/${{ secrets.SSH_USERNAME }}/model_registry"
-          ENV: "local"
-
-      - name: Create .env File
-        if: steps.set_status.outputs.ENV_EXISTS == 'false'
-        uses: ./.github/actions/create-env
-        with:
-          PROJECT_PATH: ${{ env.PROJECT_PATH }}
-          REPOSITORY_NAME: ${{ env.REPOSITORY_NAME }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          DB_TYPE: ${{ env.DB_TYPE }}
-          ARTIFACT_ROOT: ${{ env.ARTIFACT_ROOT }}
-          ARTIFACT_MODEL_REGISTRY_PATH: ${{ env.ARTIFACT_MODEL_REGISTRY_PATH }}
-          ENV: ${{ env.ENV }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PW: ${{ secrets.DB_PW }}
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          MLFLOW_S3_ENDPOINT_URL: ${{ secrets.MLFLOW_S3_ENDPOINT_URL }}
-          MLFLOW_S3_ENDPOINT_MAIN_PORT: ${{ secrets.MLFLOW_S3_ENDPOINT_MAIN_PORT }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-          MLFLOW_TRACKING_EXTERNAL_PORT: ${{ secrets.MLFLOW_TRACKING_EXTERNAL_PORT }}
-          MLFLOW_TRACKING_INTERNAL_PORT: ${{ secrets.MLFLOW_TRACKING_INTERNAL_PORT }}
-          MLFLOW_DB_HOST: ${{ secrets.MLFLOW_DB_HOST }}
-          MLFLOW_TRACKING_URI_LOCAL: ${{ secrets.MLFLOW_TRACKING_URI_LOCAL }}
-          MLFLOW_S3_ENDPOINT_SUB_PORT: ${{ secrets.MLFLOW_S3_ENDPOINT_SUB_PORT }}
-          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
-          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
-          DB_DEFAULT_NAME: ${{ secrets.DB_DEFAULT_NAME }}
-          MLFLOW_SERVER_HOST: ${{ secrets.MLFLOW_SERVER_HOST }}
-          UVICORN_PORT: ${{ secrets.UVICORN_PORT }}
-          REDIS_HOST: ${{ secrets.REDIS_HOST }}
-          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+            echo "⭐️ 환경 변수 업데이트 완료"
 
   configure_airflow:
     runs-on: ubuntu-latest
@@ -238,6 +283,11 @@ jobs:
             echo "⭐️ Airflow Variables 추가"
 
             airflow db init
+
+            cd
+            CURRENT_DIR=$(pwd)
+            echo "현재 위치: $(pwd)"
+            cd $CURRENT_DIR/${{ vars.REPOSITORY_NAME }}
             
             docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set UPBIT_ACCESS_API_KEY "${{ secrets.UPBIT_ACCESS_API_KEY }}"
             docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set UPBIT_SECRET_API_KEY "${{ secrets.UPBIT_SECRET_API_KEY }}"
