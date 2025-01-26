@@ -226,9 +226,9 @@ jobs:
       - name: Create .env File on Remote Server
         uses: appleboy/ssh-action@master
         with:
-          key: ${{ inputs.SSH_PRIVATE_KEY }}
-          host: ${{ inputs.SSH_HOST }}
-          username: ${{ inputs.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
           script: |
             echo "⭐️ .env 파일 설정 및 업데이트"
 
