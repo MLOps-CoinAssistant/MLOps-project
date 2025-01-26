@@ -282,12 +282,14 @@ jobs:
           script: |
             echo "⭐️ Airflow Variables 추가"
 
-            airflow db init
-
             cd
             CURRENT_DIR=$(pwd)
             echo "현재 위치: $(pwd)"
             cd $CURRENT_DIR/${{ vars.REPOSITORY_NAME }}
+
+            echo "Starting Airflow service..."
+            export $(grep -v '^#' .env | xargs)
+            astro dev start --compose-file compose.yaml -e .env
             
             docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set UPBIT_ACCESS_API_KEY "${{ secrets.UPBIT_ACCESS_API_KEY }}"
             docker-compose -p ml-ops-project_c92c7b -f compose.yaml exec webserver airflow variables set UPBIT_SECRET_API_KEY "${{ secrets.UPBIT_SECRET_API_KEY }}"
