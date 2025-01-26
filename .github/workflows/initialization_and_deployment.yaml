@@ -269,7 +269,7 @@ jobs:
             echo "REPOSITORY_NAME=${{ vars.REPOSITORY_NAME }}" >> .env
             echo "SSH_HOST=${{ secrets.SSH_HOST }}" >> .env
             echo "SSH_USERNAME=${{ secrets.SSH_USERNAME }}" >> .env
-            echo "SSH_PRIVATE_KEY=${{ secrets.SSH_PRIVATE_KEY }}" >> .env
+            # echo "SSH_PRIVATE_KEY=${{ secrets.SSH_PRIVATE_KEY }}" >> .env
 
             echo "⭐️ 환경 변수 업데이트 완료"
 
