@@ -236,8 +236,8 @@ jobs:
 
             if [ ! -f ".env" ]; then
                 touch .env
-            else
-                echo "✅ .env 파일이 이미 존재합니다."
+            #else
+            #    echo "✅ .env 파일이 이미 존재합니다."
             fi
             echo "DB_TYPE=${{ vars.DB_TYPE }}" > .env
             echo "ARTIFACT_ROOT=${{ vars.ARTIFACT_ROOT }}" >> .env
@@ -269,7 +269,7 @@ jobs:
             echo "REPOSITORY_NAME=${{ vars.REPOSITORY_NAME }}" >> .env
             echo "SSH_HOST=${{ secrets.SSH_HOST }}" >> .env
             echo "SSH_USERNAME=${{ secrets.SSH_USERNAME }}" >> .env
-            # echo "SSH_PRIVATE_KEY=${{ secrets.SSH_PRIVATE_KEY }}" >> .env
+
 
             echo "⭐️ 환경 변수 업데이트 완료"
 
